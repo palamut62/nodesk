@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -29,79 +30,34 @@ import {
   Save,
   X,
   Loader2,
+  Mic,
 } from "lucide-react";
-import { aiFixText, closeEditor, saveToNotion } from "./lib/tauri";
+import {
+  aiFixText,
+  saveNote,
+  startLiveWhisper,
+  type LiveWhisperSession,
+  type Note,
+} from "./lib/tauri";
+import { promptDialog } from "./components/Dialog";
+import { sanitizeAiHtml } from "./lib/aiHtml";
 
-// Basit HTML → Markdown çevirimi (editörden Notion'a giderken)
-function htmlToMarkdown(html: string): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  const lines: string[] = [];
-
-  const walk = (node: Node) => {
-    node.childNodes.forEach((n) => {
-      if (n.nodeType === Node.TEXT_NODE) return;
-      const el = n as HTMLElement;
-      const tag = el.tagName?.toLowerCase();
-      switch (tag) {
-        case "h1":
-          lines.push(`# ${el.textContent?.trim() ?? ""}`);
-          break;
-        case "h2":
-          lines.push(`## ${el.textContent?.trim() ?? ""}`);
-          break;
-        case "h3":
-          lines.push(`### ${el.textContent?.trim() ?? ""}`);
-          break;
-        case "p":
-          lines.push(el.textContent?.trim() ?? "");
-          break;
-        case "blockquote":
-          lines.push(`> ${el.textContent?.trim() ?? ""}`);
-          break;
-        case "ul":
-          if (el.getAttribute("data-type") === "taskList") {
-            el.querySelectorAll(":scope > li").forEach((li) => {
-              const checked = li.getAttribute("data-checked") === "true";
-              const text = li.textContent?.trim() ?? "";
-              lines.push(`- [${checked ? "x" : " "}] ${text}`);
-            });
-          } else {
-            el.querySelectorAll(":scope > li").forEach((li) => {
-              lines.push(`- ${li.textContent?.trim() ?? ""}`);
-            });
-          }
-          break;
-        case "ol":
-          el.querySelectorAll(":scope > li").forEach((li, i) => {
-            lines.push(`${i + 1}. ${li.textContent?.trim() ?? ""}`);
-          });
-          break;
-        case "hr":
-          lines.push("---");
-          break;
-        case "pre": {
-          const code = el.querySelector("code");
-          lines.push("```");
-          lines.push(code?.textContent ?? el.textContent ?? "");
-          lines.push("```");
-          break;
-        }
-        default:
-          walk(el);
-      }
-    });
-  };
-
-  walk(div);
-  return lines.filter((l) => l !== "").join("\n");
+interface Props {
+  noteToLoad: Note | null;
+  onClose: () => void;
 }
 
-export default function Editor() {
-  const [title, setTitle] = useState("");
+export default function Editor({ noteToLoad, onClose }: Props) {
+  const [currentId, setCurrentId] = useState<number | null>(
+    noteToLoad?.id ?? null,
+  );
+  const [title, setTitle] = useState(noteToLoad?.title ?? "");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const liveRef = useRef<LiveWhisperSession | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -115,8 +71,17 @@ export default function Editor() {
       TextStyle,
       Color,
     ],
-    content: "",
+    content: noteToLoad?.content ?? "",
   });
+
+  // noteToLoad değiştiğinde içeriği güncelle
+  useEffect(() => {
+    if (!editor) return;
+    setCurrentId(noteToLoad?.id ?? null);
+    setTitle(noteToLoad?.title ?? "");
+    editor.commands.setContent(noteToLoad?.content ?? "");
+    setStatus("");
+  }, [editor, noteToLoad]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -124,40 +89,145 @@ export default function Editor() {
         e.preventDefault();
         handleSave();
       }
-      if (e.key === "Escape") handleCancel();
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        (e.key === "v" || e.key === "V")
+      ) {
+        e.preventDefault();
+        toggleVoice();
+      }
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   });
 
+  const recordingRef = useRef(false);
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
+
+  useEffect(() => {
+    const unToggle = listen("voice-note-toggle", () => {
+      toggleVoice();
+    });
+    const unDown = listen("voice-ptt-down", () => {
+      if (recordingRef.current || transcribing) return;
+      toggleVoice();
+    });
+    const unUp = listen("voice-ptt-up", () => {
+      if (!recordingRef.current) return;
+      toggleVoice();
+    });
+    return () => {
+      unToggle.then((f) => f());
+      unDown.then((f) => f());
+      unUp.then((f) => f());
+    };
+  }, []);
+
+  const persistEditorNote = async (nextTitle?: string) => {
+    if (!editor) return currentId;
+    const html = editor.getHTML();
+    const plain = editor.getText().trim();
+    const resolvedTitle = nextTitle ?? title;
+
+    if (!resolvedTitle.trim() && !plain) return currentId;
+
+    const savedId = await saveNote(currentId, resolvedTitle, html);
+    if (currentId == null) {
+      setCurrentId(savedId);
+    }
+    if (nextTitle != null && nextTitle !== title) {
+      setTitle(nextTitle);
+    }
+    return savedId;
+  };
+
+  const insertTranscript = async (text: string) => {
+    if (!editor) return;
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setStatus("Ses bulunamadı");
+      return;
+    }
+    editor.chain().focus().insertContent(trimmed + " ").run();
+    const plainBeforeTitle = editor.getText().trim();
+    const autoTitle =
+      title.trim() ||
+      (currentId == null && plainBeforeTitle
+        ? `Sesli not · ${new Date().toLocaleString("tr-TR", {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}`
+        : undefined);
+    await persistEditorNote(autoTitle);
+    setStatus("Ses notu kaydedildi");
+    setTimeout(() => setStatus(""), 1500);
+  };
+
+  const toggleVoice = async () => {
+    if (transcribing) return;
+    if (recording) {
+      const session = liveRef.current;
+      if (!session) return;
+      liveRef.current = null;
+      setRecording(false);
+      setTranscribing(true);
+      setStatus("🔄 işleniyor…");
+      try {
+        const text = await session.stop();
+        await insertTranscript(text);
+      } catch (e: any) {
+        setStatus(`Hata: ${e}`);
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+    if (!editor) return;
+    try {
+      const session = await startLiveWhisper({
+        intervalMs: 3500,
+        onPartial: (t) => {
+          setStatus(`🔴 ${t.length > 60 ? "…" + t.slice(-60) : t}`);
+        },
+      });
+      liveRef.current = session;
+      setRecording(true);
+      setStatus("🔴 kaydediyor… (Ctrl+Shift+V ile durdur)");
+    } catch (e: any) {
+      setStatus(`Mikrofon: ${e}`);
+    }
+  };
+
   const handleSave = async () => {
     if (!editor) return;
-    const md = htmlToMarkdown(editor.getHTML());
-    if (!title.trim() && !md.trim()) {
+    const html = editor.getHTML();
+    const plain = editor.getText();
+    if (!title.trim() && !plain.trim()) {
       setStatus("Boş not kaydedilemez");
       return;
     }
     setBusy(true);
-    setStatus("Notion'a kaydediliyor…");
+    setStatus(currentId ? "Güncelleniyor…" : "Kaydediliyor…");
     try {
-      const url = await saveToNotion(title, md);
-      setStatus(`Kaydedildi → ${url}`);
+      const savedId = await saveNote(currentId, title, html);
+      if (currentId == null) {
+        setCurrentId(savedId);
+      }
+      setStatus(currentId ? "Güncellendi" : "Kaydedildi");
       setTimeout(() => {
-        setTitle("");
-        editor.commands.clearContent();
-        setStatus("");
-        closeEditor();
-      }, 900);
+        onClose();
+      }, 350);
     } catch (e: any) {
       setStatus(`Hata: ${e}`);
     } finally {
       setBusy(false);
     }
-  };
-
-  const handleCancel = () => {
-    setStatus("");
-    closeEditor();
   };
 
   const handleAiFix = async () => {
@@ -171,12 +241,7 @@ export default function Editor() {
     setStatus("AI düzeltiyor…");
     try {
       const fixed = await aiFixText(text, "fix");
-      editor.commands.setContent(
-        fixed
-          .split("\n")
-          .map((l) => `<p>${l}</p>`)
-          .join(""),
-      );
+      editor.commands.setContent(sanitizeAiHtml(fixed));
       setStatus("AI tamamladı");
       setTimeout(() => setStatus(""), 1500);
     } catch (e: any) {
@@ -188,7 +253,12 @@ export default function Editor() {
 
   if (!editor) return null;
 
-  const tb = (active: boolean, onClick: () => void, icon: any, title: string) => (
+  const tb = (
+    active: boolean,
+    onClick: () => void,
+    icon: any,
+    title: string,
+  ) => (
     <button
       className={active ? "active" : ""}
       onClick={onClick}
@@ -204,8 +274,8 @@ export default function Editor() {
       <div className="editor-card">
         <div className="editor-titlebar">
           <div style={{ width: 26 }} />
-          <div className="title">yeni not</div>
-          <button onClick={handleCancel} title="Kapat">
+          <div className="title">{currentId ? "notu düzenle" : "yeni not"}</div>
+          <button onClick={onClose} title="Kapat">
             <X size={14} />
           </button>
         </div>
@@ -304,8 +374,13 @@ export default function Editor() {
             )}
             {tb(
               editor.isActive("link"),
-              () => {
-                const url = window.prompt("Link URL:");
+              async () => {
+                const url = await promptDialog({
+                  title: "Link ekle",
+                  message: "URL gir:",
+                  placeholder: "https://…",
+                  confirmText: "Ekle",
+                });
                 if (url) editor.chain().focus().setLink({ href: url }).run();
               },
               <LinkIcon size={15} />,
@@ -314,6 +389,14 @@ export default function Editor() {
           </div>
 
           <div className="group" style={{ marginLeft: "auto" }}>
+            <button
+              onClick={toggleVoice}
+              title="Sesli not (Ctrl+Shift+V)"
+              className={recording ? "mic-recording" : ""}
+              style={{ color: recording ? undefined : "var(--accent-deep)" }}
+            >
+              <Mic size={15} />
+            </button>
             <button
               onClick={handleAiFix}
               disabled={aiBusy}
@@ -337,8 +420,10 @@ export default function Editor() {
         </div>
 
         <div className="editor-footer">
-          <div className="status">{status || "Ctrl+S kaydet · Esc iptal"}</div>
-          <button className="btn ghost" onClick={handleCancel} disabled={busy}>
+          <div className="status">
+            {status || "Ctrl+S kaydet · Ctrl+Shift+V sesli not · Esc iptal"}
+          </div>
+          <button className="btn ghost" onClick={onClose} disabled={busy}>
             İptal
           </button>
           <button className="btn primary" onClick={handleSave} disabled={busy}>

@@ -3,17 +3,25 @@ use serde_json::{json, Value};
 
 const OPENROUTER_API: &str = "https://openrouter.ai/api/v1/chat/completions";
 
-pub async fn fix_text(text: &str, mode: &str) -> Result<String> {
-    let key = std::env::var("OPENROUTER_API_KEY")
-        .map_err(|_| anyhow!("OPENROUTER_API_KEY .env dosyasında tanımlı değil"))?;
-    let model = std::env::var("OPENROUTER_MODEL")
-        .unwrap_or_else(|_| "openai/gpt-4o-mini".to_string());
+pub async fn fix_text(text: &str, mode: &str, key: &str, model: &str) -> Result<String> {
+    if key.is_empty() {
+        return Err(anyhow!("OpenRouter API key tanımlı değil (Ayarlar'dan gir)"));
+    }
 
     let system = match mode {
         "shorten" => "Verilen Türkçe metni anlamını koruyarak kısalt. Sadece düzenlenmiş metni döndür, açıklama yapma.",
         "expand" => "Verilen Türkçe metni aynı dilde, aynı üslupla genişlet ve detaylandır. Sadece metni döndür.",
         "format" => "Verilen metni markdown başlıkları, listeler ve to-do'larla güzel biçimlendir. Sadece markdown döndür.",
-        _ => "Verilen Türkçe metnin yazım, dilbilgisi ve noktalama hatalarını düzelt. Anlamı değiştirme, üslubu koru. Sadece düzeltilmiş metni döndür, açıklama yapma.",
+        _ => "Türkçe bir notu hem yazım/dilbilgisi/noktalama olarak düzelt hem de okunabilir biçimde yapılandır. Kurallar:\n\
+- Anlamı, üslubu ve içeriği değiştirme; hiçbir şey ekleme veya çıkarma.\n\
+- Metin tek bir düşünce/paragrafsa sadece düzeltilmiş paragraf(lar) olarak döndür.\n\
+- Birden çok madde, görev, fikir, adım veya yapılacak varsa uygun biçimde yapılandır:\n\
+  · Yapılacaklar/aksiyonlar için TipTap task list: <ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"false\"><p>madde</p></li></ul>\n\
+  · Sıralı adımlar için <ol><li>…</li></ol>\n\
+  · Bağımsız maddeler için <ul><li>…</li></ul>\n\
+  · Gerekirse <h2>/<h3> başlıklarıyla gruplandır.\n\
+- Çıktı SADECE geçerli HTML olmalı: <p>, <h2>, <h3>, <ul>, <ol>, <li>, <strong>, <em>, <br>. Kod bloğu, markdown, ``` veya açıklama KULLANMA.\n\
+- Cevapta sadece HTML olsun, başka hiçbir metin olmasın.",
     };
 
     let body = json!({

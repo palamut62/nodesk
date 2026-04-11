@@ -12,36 +12,23 @@
   "app": {
     "windows": [
       {
-        "label": "widget",
+        "label": "main",
         "title": "nodesk",
-        "url": "index.html#/widget",
-        "width": 220,
+        "url": "index.html",
+        "width": 310,
         "height": 56,
         "minWidth": 200,
         "minHeight": 48,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "resizable": false,
+        "resizable": true,
         "skipTaskbar": true,
         "shadow": false,
         "center": false,
         "x": 40,
-        "y": 40
-      },
-      {
-        "label": "editor",
-        "title": "nodesk — note",
-        "url": "index.html#/editor",
-        "width": 640,
-        "height": 560,
-        "minWidth": 480,
-        "minHeight": 400,
-        "decorations": false,
-        "transparent": true,
-        "visible": false,
-        "center": true,
-        "shadow": true
+        "y": 40,
+        "additionalBrowserArgs": "--use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required --enable-features=MediaFoundationClearPlayback"
       }
     ],
     "security": {
