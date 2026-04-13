@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -34,19 +35,21 @@ import {
   FolderOpen,
   FileDown,
   Copy,
+  Trash2,
 } from "lucide-react";
-import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { mdToHtml, htmlToMd, txtToHtml, htmlToTxt } from "./lib/fileFormat";
 import {
   aiFixText,
+  deleteNote,
+  readTextFile,
   saveNote,
   startLiveWhisper,
-  readTextFile,
   writeTextFile,
   type LiveWhisperSession,
   type Note,
 } from "./lib/tauri";
-import { promptDialog } from "./components/Dialog";
+import { confirmDialog, promptDialog } from "./components/Dialog";
+import ErrorBubble from "./components/ErrorBubble";
 import { sanitizeAiHtml } from "./lib/aiHtml";
 import { useT } from "./lib/i18n";
 
@@ -55,13 +58,16 @@ interface Props {
   onClose: () => void;
 }
 
+function getErrorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value ?? "Bilinmeyen hata");
+}
+
 export default function Editor({ noteToLoad, onClose }: Props) {
   const t = useT();
-  const [currentId, setCurrentId] = useState<number | null>(
-    noteToLoad?.id ?? null,
-  );
+  const [currentId, setCurrentId] = useState<number | null>(noteToLoad?.id ?? null);
   const [title, setTitle] = useState(noteToLoad?.title ?? "");
   const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -71,7 +77,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
-      Placeholder.configure({ placeholder: "Notun buraya…" }),
+      Placeholder.configure({ placeholder: t("notePlaceholder") }),
       TaskList,
       TaskItem.configure({ nested: true }),
       Link.configure({ openOnClick: false, autolink: true }),
@@ -83,28 +89,29 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     content: noteToLoad?.content ?? "",
   });
 
-  // noteToLoad değiştiğinde içeriği güncelle
+  const showError = (value: unknown, prefix?: string) => {
+    const message = getErrorMessage(value);
+    setError(prefix ? `${prefix}: ${message}` : message);
+  };
+
   useEffect(() => {
     if (!editor) return;
     setCurrentId(noteToLoad?.id ?? null);
     setTitle(noteToLoad?.title ?? "");
     editor.commands.setContent(noteToLoad?.content ?? "");
     setStatus("");
+    setError("");
   }, [editor, noteToLoad]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
-        handleSave();
+        void handleSave();
       }
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.shiftKey &&
-        (e.key === "v" || e.key === "V")
-      ) {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
-        toggleVoice();
+        void toggleVoice();
       }
       if (e.key === "Escape") onClose();
     };
@@ -119,22 +126,23 @@ export default function Editor({ noteToLoad, onClose }: Props) {
 
   useEffect(() => {
     const unToggle = listen("voice-note-toggle", () => {
-      toggleVoice();
+      void toggleVoice();
     });
     const unDown = listen("voice-ptt-down", () => {
       if (recordingRef.current || transcribing) return;
-      toggleVoice();
+      void toggleVoice();
     });
     const unUp = listen("voice-ptt-up", () => {
       if (!recordingRef.current) return;
-      toggleVoice();
+      void toggleVoice();
     });
+
     return () => {
       unToggle.then((f) => f());
       unDown.then((f) => f());
       unUp.then((f) => f());
     };
-  }, []);
+  }, [transcribing]);
 
   const persistEditorNote = async (nextTitle?: string) => {
     if (!editor) return currentId;
@@ -161,17 +169,18 @@ export default function Editor({ noteToLoad, onClose }: Props) {
       setStatus(t("noSound"));
       return;
     }
-    // AI ile duzelt
+
     let processed = trimmed;
     try {
       setStatus(t("aiFixing"));
       const fixed = await aiFixText(trimmed, "fix");
       const clean = fixed.trim();
       if (clean && !clean.startsWith("[HATA]")) processed = clean;
-    } catch {
-      // AI basarisizsa ham metni ekle
+    } catch (err) {
+      showError(err, "AI");
     }
-    editor.chain().focus().insertContent(processed + " ").run();
+
+    editor.chain().focus().insertContent(`${processed} `).run();
     const plainBeforeTitle = editor.getText().trim();
     const autoTitle =
       title.trim() ||
@@ -183,43 +192,51 @@ export default function Editor({ noteToLoad, onClose }: Props) {
             minute: "2-digit",
           })}`
         : undefined);
+
     await persistEditorNote(autoTitle);
+    setError("");
     setStatus(t("voiceNoteSaved"));
-    setTimeout(() => setStatus(""), 1500);
+    window.setTimeout(() => setStatus(""), 1500);
   };
 
   const toggleVoice = async () => {
     if (transcribing) return;
+
     if (recording) {
       const session = liveRef.current;
       if (!session) return;
+
       liveRef.current = null;
       setRecording(false);
       setTranscribing(true);
       setStatus(t("processing"));
+
       try {
         const text = await session.stop();
         await insertTranscript(text);
-      } catch (e: any) {
-        setStatus(`Hata: ${e}`);
+      } catch (e: unknown) {
+        showError(e);
       } finally {
         setTranscribing(false);
       }
       return;
     }
+
     if (!editor) return;
+
     try {
       const session = await startLiveWhisper({
         intervalMs: 3500,
-        onPartial: (t) => {
-          setStatus(`🔴 ${t.length > 60 ? "…" + t.slice(-60) : t}`);
+        onPartial: (partial) => {
+          setStatus(`REC ${partial.length > 60 ? `...${partial.slice(-60)}` : partial}`);
         },
       });
       liveRef.current = session;
       setRecording(true);
+      setError("");
       setStatus(t("recording"));
-    } catch (e: any) {
-      setStatus(`Mikrofon: ${e}`);
+    } catch (e: unknown) {
+      showError(e, "Mikrofon");
     }
   };
 
@@ -229,22 +246,25 @@ export default function Editor({ noteToLoad, onClose }: Props) {
         multiple: false,
         filters: [
           { name: "Metin / Markdown", extensions: ["txt", "md", "markdown"] },
-          { name: "Tümü", extensions: ["*"] },
+          { name: "Tum dosyalar", extensions: ["*"] },
         ],
       });
       if (!picked || typeof picked !== "string") return;
+
       const content = await readTextFile(picked);
       const name = picked.split(/[\\/]/).pop() || "";
       const base = name.replace(/\.(txt|md|markdown)$/i, "");
       const isMd = /\.(md|markdown)$/i.test(name);
+
       if (!editor) return;
       const html = isMd ? await mdToHtml(content) : txtToHtml(content);
       editor.commands.setContent(html);
       setTitle(base);
-      setStatus(`Açıldı: ${name}`);
-      setTimeout(() => setStatus(""), 2000);
-    } catch (e: any) {
-      setStatus(`Açma hatası: ${e}`);
+      setError("");
+      setStatus(`Acildi: ${name}`);
+      window.setTimeout(() => setStatus(""), 2000);
+    } catch (e: unknown) {
+      showError(e, "Acma hatasi");
     }
   };
 
@@ -252,21 +272,23 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     if (!editor) return;
     try {
       const path = await saveDialog({
-        defaultPath: (title || "not") + ".md",
+        defaultPath: `${title || "not"}.md`,
         filters: [
           { name: "Markdown", extensions: ["md"] },
           { name: "Metin", extensions: ["txt"] },
         ],
       });
       if (!path) return;
+
       const isMd = /\.(md|markdown)$/i.test(path);
       const html = editor.getHTML();
       const content = isMd ? htmlToMd(html) : htmlToTxt(html);
       await writeTextFile(path, content);
+      setError("");
       setStatus(`Kaydedildi: ${path.split(/[\\/]/).pop()}`);
-      setTimeout(() => setStatus(""), 2000);
-    } catch (e: any) {
-      setStatus(`Kaydetme hatası: ${e}`);
+      window.setTimeout(() => setStatus(""), 2000);
+    } catch (e: unknown) {
+      showError(e, "Disa aktarma hatasi");
     }
   };
 
@@ -278,19 +300,45 @@ export default function Editor({ noteToLoad, onClose }: Props) {
       setStatus(t("emptyNote"));
       return;
     }
+
     setBusy(true);
     setStatus(currentId ? t("updating") : t("saving"));
+
     try {
       const savedId = await saveNote(currentId, title, html);
       if (currentId == null) {
         setCurrentId(savedId);
       }
+      setError("");
       setStatus(currentId ? t("updated") : t("savedNote"));
-      setTimeout(() => {
-        onClose();
-      }, 350);
-    } catch (e: any) {
-      setStatus(`Hata: ${e}`);
+      window.setTimeout(() => onClose(), 350);
+    } catch (e: unknown) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (currentId == null) return;
+
+    const ok = await confirmDialog({
+      title: t("deleteNote"),
+      message: t("deleteConfirm"),
+      confirmText: t("delete"),
+      cancelText: t("giveUp"),
+      danger: true,
+    });
+    if (!ok) return;
+
+    setBusy(true);
+    try {
+      await deleteNote(currentId);
+      setError("");
+      setStatus(t("deletedNote"));
+      window.setTimeout(() => onClose(), 180);
+    } catch (e: unknown) {
+      showError(e);
     } finally {
       setBusy(false);
     }
@@ -303,15 +351,17 @@ export default function Editor({ noteToLoad, onClose }: Props) {
       setStatus(t("noTextToFix"));
       return;
     }
+
     setAiBusy(true);
     setStatus(t("aiFixing"));
     try {
       const fixed = await aiFixText(text, "fix");
       editor.commands.setContent(sanitizeAiHtml(fixed));
+      setError("");
       setStatus(t("aiDone"));
-      setTimeout(() => setStatus(""), 1500);
-    } catch (e: any) {
-      setStatus(`AI hata: ${e}`);
+      window.setTimeout(() => setStatus(""), 1500);
+    } catch (e: unknown) {
+      showError(e, "AI");
     } finally {
       setAiBusy(false);
     }
@@ -319,16 +369,11 @@ export default function Editor({ noteToLoad, onClose }: Props) {
 
   if (!editor) return null;
 
-  const tb = (
-    active: boolean,
-    onClick: () => void,
-    icon: any,
-    title: string,
-  ) => (
+  const tb = (active: boolean, onClick: () => void, icon: ReactNode, titleText: string) => (
     <button
       className={active ? "active" : ""}
       onClick={onClick}
-      title={title}
+      title={titleText}
       type="button"
     >
       {icon}
@@ -338,6 +383,8 @@ export default function Editor({ noteToLoad, onClose }: Props) {
   return (
     <div className="editor-shell">
       <div className="editor-card">
+        {error && <ErrorBubble message={error} onClose={() => setError("")} />}
+
         <div className="editor-titlebar">
           <div style={{ width: 26 }} />
           <div className="title">{currentId ? t("editNote") : t("newNoteTitle")}</div>
@@ -444,10 +491,12 @@ export default function Editor({ noteToLoad, onClose }: Props) {
                 const url = await promptDialog({
                   title: t("addLink"),
                   message: t("enterUrl"),
-                  placeholder: "https://…",
+                  placeholder: "https://...",
                   confirmText: t("add"),
                 });
-                if (url) editor.chain().focus().setLink({ href: url }).run();
+                if (url) {
+                  editor.chain().focus().setLink({ href: url }).run();
+                }
               },
               <LinkIcon size={15} />,
               t("link"),
@@ -456,7 +505,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
 
           <div className="group" style={{ marginLeft: "auto" }}>
             <button
-              onClick={toggleVoice}
+              onClick={() => void toggleVoice()}
               title={t("voiceNote")}
               className={recording ? "mic-recording" : ""}
               style={{ color: recording ? undefined : "var(--accent-deep)" }}
@@ -464,7 +513,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
               <Mic size={15} />
             </button>
             <button
-              onClick={handleAiFix}
+              onClick={() => void handleAiFix()}
               disabled={aiBusy}
               title={t("aiFix")}
               style={{ color: "var(--accent-deep)" }}
@@ -486,18 +535,26 @@ export default function Editor({ noteToLoad, onClose }: Props) {
         </div>
 
         <div className="editor-footer">
-          <div className="status">
-            {status || t("statusHint")}
-          </div>
+          <div className="status">{status || t("statusHint")}</div>
+
+          {currentId != null && (
+            <button className="btn danger" onClick={() => void handleDelete()} disabled={busy}>
+              <Trash2 size={14} /> {t("delete")}
+            </button>
+          )}
+
           <button
             className="btn ghost"
             onClick={() => {
-              if (!editor) return;
               const text = editor.getText();
-              if (!text.trim()) { setStatus(t("nothingToCopy")); return; }
+              if (!text.trim()) {
+                setStatus(t("nothingToCopy"));
+                return;
+              }
               navigator.clipboard.writeText(text).then(() => {
+                setError("");
                 setStatus(t("copied"));
-                setTimeout(() => setStatus(""), 1500);
+                window.setTimeout(() => setStatus(""), 1500);
               });
             }}
             disabled={busy}
@@ -505,16 +562,20 @@ export default function Editor({ noteToLoad, onClose }: Props) {
           >
             <Copy size={14} /> {t("copy")}
           </button>
-          <button className="btn ghost" onClick={handleOpenFile} disabled={busy} title="TXT / MD">
+
+          <button className="btn ghost" onClick={() => void handleOpenFile()} disabled={busy}>
             <FolderOpen size={14} /> {t("open")}
           </button>
-          <button className="btn ghost" onClick={handleExportFile} disabled={busy} title="TXT / MD">
+
+          <button className="btn ghost" onClick={() => void handleExportFile()} disabled={busy}>
             <FileDown size={14} /> {t("export")}
           </button>
+
           <button className="btn ghost" onClick={onClose} disabled={busy}>
             {t("cancel")}
           </button>
-          <button className="btn primary" onClick={handleSave} disabled={busy}>
+
+          <button className="btn primary" onClick={() => void handleSave()} disabled={busy}>
             {busy ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
             {t("save")}
           </button>

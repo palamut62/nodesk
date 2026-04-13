@@ -1,33 +1,107 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  X, Type, Square, ArrowUpRight, Droplets, EyeOff,
-  Save, Undo2, Palette, Loader2, Trash2,
+  X,
+  Type,
+  Square,
+  ArrowUpRight,
+  Droplets,
+  EyeOff,
+  Save,
+  Undo2,
+  Redo2,
+  Palette,
+  Loader2,
+  Trash2,
+  Copy,
+  MousePointer2,
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
-import { useT } from "./lib/i18n";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { useT } from "./lib/i18n";
 
 type Tool = "select" | "text" | "rect" | "arrow" | "blur" | "blur-inverse";
+type AnnotationType = "text" | "rect" | "arrow" | "blur" | "blur-inverse";
 
 interface Annotation {
   id: number;
-  type: "text" | "rect" | "arrow" | "blur" | "blur-inverse";
+  type: AnnotationType;
   x: number;
   y: number;
   w: number;
   h: number;
   color: string;
   text?: string;
-  // arrow endpoint
+  fontSize?: number;
+  fontFamily?: string;
+  fontStyle?: "normal" | "italic";
+  fontWeight?: "400" | "700";
+  underline?: boolean;
+  textAlign?: "left" | "center" | "right";
   x2?: number;
   y2?: number;
 }
 
+interface DragState {
+  id: number;
+  pointerX: number;
+  pointerY: number;
+  original: Annotation;
+}
+
 const COLORS = ["#e53935", "#1e88e5", "#43a047", "#fb8c00", "#8e24aa", "#ffffff", "#000000"];
+const DEFAULT_TEXT = "Yazi";
+const DEFAULT_FONT_SIZE = 28;
+const FONT_OPTIONS = [
+  { value: "Arial", label: "Arial" },
+  { value: "Georgia", label: "Georgia" },
+  { value: "Trebuchet MS", label: "Trebuchet" },
+  { value: "Courier New", label: "Courier" },
+  { value: "Verdana", label: "Verdana" },
+];
 
 interface Props {
   imageBase64: string;
   onClose: () => void;
+}
+
+function cloneAnnotations(items: Annotation[]) {
+  return items.map((item) => ({ ...item }));
+}
+
+function clampRect(x: number, y: number, w: number, h: number, maxW: number, maxH: number) {
+  const nx = Math.max(0, Math.min(x, maxW - Math.max(1, w)));
+  const ny = Math.max(0, Math.min(y, maxH - Math.max(1, h)));
+  return { x: nx, y: ny };
+}
+
+function distanceToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+  const cx = x1 + t * dx;
+  const cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function buildCanvasFont(ann: Annotation, size: number) {
+  const style = ann.fontStyle ?? "normal";
+  const weight = ann.fontWeight ?? "700";
+  const family = ann.fontFamily ?? "Arial";
+  return `${style} ${weight} ${size}px "${family}"`;
 }
 
 export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
@@ -35,28 +109,31 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+
   const [tool, setTool] = useState<Tool>("select");
   const [color, setColor] = useState("#e53935");
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [undoStack, setUndoStack] = useState<Annotation[][]>([]);
+  const [redoStack, setRedoStack] = useState<Annotation[][]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [dragging, setDragging] = useState<DragState | null>(null);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
   const [nextId, setNextId] = useState(1);
   const [saving, setSaving] = useState(false);
-  const [textInput, setTextInput] = useState<{ x: number; y: number } | null>(null);
-  const [textValue, setTextValue] = useState("");
+  const [status, setStatus] = useState("");
   const [scale, setScale] = useState(1);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
 
-  // Load image
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
       imgRef.current = img;
       const maxW = 860;
       const maxH = 560;
-      const s = Math.min(maxW / img.width, maxH / img.height, 1);
-      setScale(s);
+      const nextScale = Math.min(maxW / img.width, maxH / img.height, 1);
+      setScale(nextScale);
       setImgSize({ w: img.width, h: img.height });
     };
     img.onerror = (e) => {
@@ -65,67 +142,207 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     img.src = `data:image/png;base64,${imageBase64}`;
   }, [imageBase64]);
 
-  const redraw = useCallback(() => {
+  const measureTextBox = useCallback((ann: Annotation) => {
+    const text = ann.text?.length ? ann.text : DEFAULT_TEXT;
+    const fontSize = ann.fontSize ?? DEFAULT_FONT_SIZE;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      const fallbackWidth = Math.max(fontSize * 1.8, text.length * fontSize * 0.58);
+      return { width: fallbackWidth, height: fontSize * 1.35 };
+    }
+    ctx.font = buildCanvasFont(ann, fontSize);
+    const lines = text.split("\n");
+    const width = Math.max(
+      fontSize * 1.8,
+      ...lines.map((line) => ctx.measureText(line || " ").width),
+    );
+    const lineHeight = fontSize * 1.35;
+    const height = Math.max(lineHeight, lines.length * lineHeight);
+    return { width, height };
+  }, []);
+
+  const getBounds = useCallback(
+    (ann: Annotation) => {
+      if (ann.type === "arrow") {
+        const x1 = ann.x;
+        const y1 = ann.y;
+        const x2 = ann.x2 ?? ann.x;
+        const y2 = ann.y2 ?? ann.y;
+        return {
+          x: Math.min(x1, x2),
+          y: Math.min(y1, y2),
+          w: Math.abs(x2 - x1),
+          h: Math.abs(y2 - y1),
+        };
+      }
+
+      if (ann.type === "text") {
+        const box = measureTextBox(ann);
+        return {
+          x: ann.x,
+          y: ann.y - box.height + 6,
+          w: box.width,
+          h: box.height,
+        };
+      }
+
+      return { x: ann.x, y: ann.y, w: ann.w, h: ann.h };
+    },
+    [measureTextBox],
+  );
+
+  const drawSelection = useCallback(
+    (ctx: CanvasRenderingContext2D, ann: Annotation) => {
+      const bounds = getBounds(ann);
+      ctx.save();
+      ctx.strokeStyle = "rgba(30, 136, 229, 0.95)";
+      ctx.fillStyle = "rgba(30, 136, 229, 0.08)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(bounds.x - 4, bounds.y - 4, bounds.w + 8, bounds.h + 8);
+      ctx.setLineDash([]);
+      ctx.fillRect(bounds.x - 4, bounds.y - 4, bounds.w + 8, bounds.h + 8);
+      ctx.restore();
+    },
+    [getBounds],
+  );
+
+  const drawAnnotation = useCallback(
+    (ctx: CanvasRenderingContext2D, ann: Annotation, s: number) => {
+      const x = ann.x * s;
+      const y = ann.y * s;
+      const w = ann.w * s;
+      const h = ann.h * s;
+
+      switch (ann.type) {
+        case "rect":
+          ctx.strokeStyle = ann.color;
+          ctx.lineWidth = 3 * s;
+          ctx.strokeRect(x, y, w, h);
+          break;
+        case "text": {
+          const fontSize = (ann.fontSize ?? DEFAULT_FONT_SIZE) * s;
+          const drawFontSize = Math.max(14, fontSize);
+          ctx.font = buildCanvasFont(ann, drawFontSize);
+          ctx.fillStyle = ann.color;
+          ctx.textBaseline = "top";
+          ctx.textAlign = ann.textAlign ?? "left";
+          const lines = (ann.text?.length ? ann.text : DEFAULT_TEXT).split("\n");
+          const lineHeight = drawFontSize * 1.35;
+          const anchorX =
+            ann.textAlign === "center"
+              ? x + measureTextBox(ann).width * s * 0.5
+              : ann.textAlign === "right"
+                ? x + measureTextBox(ann).width * s
+                : x;
+          const topY = y - lineHeight + 6 * s;
+          lines.forEach((line, index) => {
+            const drawY = topY + index * lineHeight;
+            const value = line || " ";
+            ctx.fillText(value, anchorX, drawY);
+            if (ann.underline) {
+              const metrics = ctx.measureText(value);
+              const lineWidth = metrics.width;
+              let startX = anchorX;
+              if ((ann.textAlign ?? "left") === "center") startX -= lineWidth / 2;
+              if ((ann.textAlign ?? "left") === "right") startX -= lineWidth;
+              const underlineY = drawY + drawFontSize + 2 * s;
+              ctx.beginPath();
+              ctx.lineWidth = Math.max(1, s * 2);
+              ctx.strokeStyle = ann.color;
+              ctx.moveTo(startX, underlineY);
+              ctx.lineTo(startX + lineWidth, underlineY);
+              ctx.stroke();
+            }
+          });
+          break;
+        }
+        case "arrow": {
+          const x2 = (ann.x2 ?? ann.x) * s;
+          const y2 = (ann.y2 ?? ann.y) * s;
+          ctx.strokeStyle = ann.color;
+          ctx.fillStyle = ann.color;
+          ctx.lineWidth = 3 * s;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          const angle = Math.atan2(y2 - y, x2 - x);
+          const headLen = 14 * s;
+          ctx.beginPath();
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(x2 - headLen * Math.cos(angle - 0.4), y2 - headLen * Math.sin(angle - 0.4));
+          ctx.lineTo(x2 - headLen * Math.cos(angle + 0.4), y2 - headLen * Math.sin(angle + 0.4));
+          ctx.closePath();
+          ctx.fill();
+          break;
+        }
+        case "blur":
+          applyBlurRegion(ctx, x, y, w, h);
+          break;
+        case "blur-inverse":
+          applyBlurInverse(ctx, x, y, w, h);
+          break;
+      }
+    },
+    [measureTextBox],
+  );
+
+  const redrawBase = useCallback(() => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
     if (!canvas || !img) return;
     canvas.width = img.width;
     canvas.height = img.height;
-    const ctx = canvas.getContext("2d")!;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
     for (const ann of annotations) {
       drawAnnotation(ctx, ann, 1);
     }
-  }, [annotations]);
+  }, [annotations, drawAnnotation]);
 
-  useEffect(() => { redraw(); }, [redraw, imgSize]);
+  const redrawOverlay = useCallback(() => {
+    const overlay = overlayRef.current;
+    if (!overlay || !imgSize) return;
+    overlay.width = imgSize.w;
+    overlay.height = imgSize.h;
+    const ctx = overlay.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-  const drawAnnotation = (ctx: CanvasRenderingContext2D, ann: Annotation, s: number) => {
-    const x = ann.x * s;
-    const y = ann.y * s;
-    const w = ann.w * s;
-    const h = ann.h * s;
-
-    switch (ann.type) {
-      case "rect":
-        ctx.strokeStyle = ann.color;
+    if (drawing) {
+      if (tool === "rect" || tool === "blur" || tool === "blur-inverse") {
+        ctx.strokeStyle = tool === "rect" ? color : "rgba(30, 136, 229, 0.8)";
         ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, w, h);
-        break;
-      case "text":
-        ctx.font = `bold ${Math.max(16, 18 * s)}px sans-serif`;
-        ctx.fillStyle = ann.color;
-        ctx.fillText(ann.text || "", x, y);
-        break;
-      case "arrow": {
-        const x2 = (ann.x2 ?? ann.x) * s;
-        const y2 = (ann.y2 ?? ann.y) * s;
-        ctx.strokeStyle = ann.color;
-        ctx.fillStyle = ann.color;
+        ctx.setLineDash(tool === "rect" ? [] : [8, 5]);
+        ctx.strokeRect(startPos.x, startPos.y, currentPos.x - startPos.x, currentPos.y - startPos.y);
+        ctx.setLineDash([]);
+      } else if (tool === "arrow") {
+        ctx.strokeStyle = color;
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x2, y2);
+        ctx.moveTo(startPos.x, startPos.y);
+        ctx.lineTo(currentPos.x, currentPos.y);
         ctx.stroke();
-        // Arrowhead
-        const angle = Math.atan2(y2 - y, x2 - x);
-        const headLen = 14;
-        ctx.beginPath();
-        ctx.moveTo(x2, y2);
-        ctx.lineTo(x2 - headLen * Math.cos(angle - 0.4), y2 - headLen * Math.sin(angle - 0.4));
-        ctx.lineTo(x2 - headLen * Math.cos(angle + 0.4), y2 - headLen * Math.sin(angle + 0.4));
-        ctx.closePath();
-        ctx.fill();
-        break;
       }
-      case "blur":
-        applyBlurRegion(ctx, x, y, w, h);
-        break;
-      case "blur-inverse":
-        applyBlurInverse(ctx, x, y, w, h);
-        break;
     }
-  };
+
+    const selected = annotations.find((ann) => ann.id === selectedId);
+    if (selected) {
+      drawSelection(ctx, selected);
+    }
+  }, [annotations, color, currentPos, drawSelection, drawing, imgSize, selectedId, startPos, tool]);
+
+  useEffect(() => {
+    redrawBase();
+  }, [imgSize, redrawBase]);
+
+  useEffect(() => {
+    redrawOverlay();
+  }, [redrawOverlay]);
 
   const applyBlurRegion = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) => {
     if (w === 0 || h === 0) return;
@@ -147,18 +364,15 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     const rw = Math.round(Math.abs(w));
     const rh = Math.round(Math.abs(h));
 
-    // Save the clear region
     let clearData: ImageData | null = null;
     if (rw > 0 && rh > 0) {
       clearData = ctx.getImageData(rx, ry, Math.min(rw, cw - rx), Math.min(rh, ch - ry));
     }
 
-    // Pixelate entire canvas
     const fullData = ctx.getImageData(0, 0, cw, ch);
     pixelateImageData(fullData, 12);
     ctx.putImageData(fullData, 0, 0);
 
-    // Restore clear region
     if (clearData) {
       ctx.putImageData(clearData, rx, ry);
     }
@@ -170,11 +384,17 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     const d = data.data;
     for (let by = 0; by < h; by += blockSize) {
       for (let bx = 0; bx < w; bx += blockSize) {
-        let r = 0, g = 0, b = 0, count = 0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let count = 0;
         for (let dy = 0; dy < blockSize && by + dy < h; dy++) {
           for (let dx = 0; dx < blockSize && bx + dx < w; dx++) {
             const i = ((by + dy) * w + (bx + dx)) * 4;
-            r += d[i]; g += d[i + 1]; b += d[i + 2]; count++;
+            r += d[i];
+            g += d[i + 1];
+            b += d[i + 2];
+            count++;
           }
         }
         r = Math.round(r / count);
@@ -183,7 +403,9 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
         for (let dy = 0; dy < blockSize && by + dy < h; dy++) {
           for (let dx = 0; dx < blockSize && bx + dx < w; dx++) {
             const i = ((by + dy) * w + (bx + dx)) * 4;
-            d[i] = r; d[i + 1] = g; d[i + 2] = b;
+            d[i] = r;
+            d[i + 1] = g;
+            d[i + 2] = b;
           }
         }
       }
@@ -198,49 +420,160 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     };
   };
 
+  const hitTest = useCallback(
+    (x: number, y: number) => {
+      for (let i = annotations.length - 1; i >= 0; i--) {
+        const ann = annotations[i];
+        if (ann.type === "arrow") {
+          const dist = distanceToSegment(x, y, ann.x, ann.y, ann.x2 ?? ann.x, ann.y2 ?? ann.y);
+          if (dist <= 10) return ann;
+          continue;
+        }
+
+        const bounds = getBounds(ann);
+        if (
+          x >= bounds.x - 6 &&
+          x <= bounds.x + bounds.w + 6 &&
+          y >= bounds.y - 6 &&
+          y <= bounds.y + bounds.h + 6
+        ) {
+          return ann;
+        }
+      }
+      return null;
+    },
+    [annotations, getBounds],
+  );
+
+  const updateAnnotation = (id: number, updater: (ann: Annotation) => Annotation) => {
+    setAnnotations((prev) => prev.map((ann) => (ann.id === id ? updater(ann) : ann)));
+  };
+
+  const rememberSnapshot = useCallback(
+    (snapshot = annotations) => {
+      setUndoStack((prev) => [...prev, cloneAnnotations(snapshot)]);
+      setRedoStack([]);
+    },
+    [annotations],
+  );
+
+  const addTextAnnotation = (x: number, y: number) => {
+    rememberSnapshot();
+    const ann: Annotation = {
+      id: nextId,
+      type: "text",
+      x,
+      y,
+      w: 0,
+      h: 0,
+      color,
+      text: DEFAULT_TEXT,
+      fontSize: DEFAULT_FONT_SIZE,
+      fontFamily: "Arial",
+      fontStyle: "normal",
+      fontWeight: "700",
+      underline: false,
+      textAlign: "left",
+    };
+    setAnnotations((prev) => [...prev, ann]);
+    setSelectedId(ann.id);
+    setTool("select");
+    setNextId((n) => n + 1);
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (tool === "select") return;
+    const pos = getPos(e);
+
     if (tool === "text") {
       e.preventDefault();
-      const pos = getPos(e);
-      setTextInput(pos);
-      setTextValue("");
+      addTextAnnotation(pos.x, pos.y);
+      setStatus(t("textEditorReady"));
       return;
     }
-    const pos = getPos(e);
+
+    if (tool === "select") {
+      const hit = hitTest(pos.x, pos.y);
+      if (!hit) {
+        setSelectedId(null);
+        return;
+      }
+      setSelectedId(hit.id);
+      rememberSnapshot();
+      setDragging({
+        id: hit.id,
+        pointerX: pos.x,
+        pointerY: pos.y,
+        original: { ...hit },
+      });
+      return;
+    }
+
+    setSelectedId(null);
     setStartPos(pos);
     setCurrentPos(pos);
     setDrawing(true);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!drawing) return;
     const pos = getPos(e);
-    setCurrentPos(pos);
 
-    // Draw preview on overlay
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-    const ctx = overlay.getContext("2d")!;
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    if (dragging && imgSize) {
+      const dx = pos.x - dragging.pointerX;
+      const dy = pos.y - dragging.pointerY;
+      updateAnnotation(dragging.id, (ann) => {
+        const source = dragging.original;
+        if (source.type === "arrow") {
+          const x1 = source.x + dx;
+          const y1 = source.y + dy;
+          const x2 = (source.x2 ?? source.x) + dx;
+          const y2 = (source.y2 ?? source.y) + dy;
+          const minX = Math.min(x1, x2);
+          const minY = Math.min(y1, y2);
+          const maxX = Math.max(x1, x2);
+          const maxY = Math.max(y1, y2);
+          const shiftX =
+            minX < 0 ? -minX : maxX > imgSize.w ? imgSize.w - maxX : 0;
+          const shiftY =
+            minY < 0 ? -minY : maxY > imgSize.h ? imgSize.h - maxY : 0;
+          return {
+            ...ann,
+            x: x1 + shiftX,
+            y: y1 + shiftY,
+            x2: x2 + shiftX,
+            y2: y2 + shiftY,
+          };
+        }
 
-    if (tool === "rect" || tool === "blur" || tool === "blur-inverse") {
-      ctx.strokeStyle = tool === "rect" ? color : "rgba(100,100,255,0.5)";
-      ctx.lineWidth = 3 / scale;
-      ctx.setLineDash(tool === "rect" ? [] : [6 / scale, 4 / scale]);
-      ctx.strokeRect(startPos.x, startPos.y, pos.x - startPos.x, pos.y - startPos.y);
-      ctx.setLineDash([]);
-    } else if (tool === "arrow") {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3 / scale;
-      ctx.beginPath();
-      ctx.moveTo(startPos.x, startPos.y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
+        const bounds = getBounds(source);
+        const next = clampRect(bounds.x + dx, bounds.y + dy, bounds.w, bounds.h, imgSize.w, imgSize.h);
+        if (source.type === "text") {
+          const textHeight = bounds.h;
+          return {
+            ...ann,
+            x: next.x,
+            y: next.y + textHeight - 6,
+          };
+        }
+
+        return {
+          ...ann,
+          x: next.x,
+          y: next.y,
+        };
+      });
+      return;
     }
+
+    if (!drawing) return;
+    setCurrentPos(pos);
   };
 
   const handleMouseUp = () => {
+    if (dragging) {
+      setDragging(null);
+      return;
+    }
+
     if (!drawing) return;
     setDrawing(false);
 
@@ -253,65 +586,78 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
 
     const ann: Annotation = {
       id: nextId,
-      type: tool as any,
-      x, y, w, h,
+      type: tool as AnnotationType,
+      x,
+      y,
+      w,
+      h,
       color,
-      ...(tool === "arrow" ? { x: startPos.x, y: startPos.y, x2: currentPos.x, y2: currentPos.y, w: 0, h: 0 } : {}),
+      ...(tool === "arrow"
+        ? { x: startPos.x, y: startPos.y, x2: currentPos.x, y2: currentPos.y, w: 0, h: 0 }
+        : {}),
     };
-    setAnnotations((prev) => [...prev, ann]);
-    setNextId((n) => n + 1);
 
-    // Clear overlay
-    const overlay = overlayRef.current;
-    if (overlay) {
-      overlay.getContext("2d")!.clearRect(0, 0, overlay.width, overlay.height);
-    }
-  };
-
-  const addTextAnnotation = () => {
-    if (!textInput || !textValue.trim()) {
-      setTextInput(null);
-      return;
-    }
-    const ann: Annotation = {
-      id: nextId,
-      type: "text",
-      x: textInput.x,
-      y: textInput.y,
-      w: 0, h: 0,
-      color,
-      text: textValue,
-    };
+    rememberSnapshot();
     setAnnotations((prev) => [...prev, ann]);
+    setSelectedId(ann.id);
     setNextId((n) => n + 1);
-    setTextInput(null);
-    setTextValue("");
   };
 
   const handleUndo = () => {
-    setAnnotations((prev) => prev.slice(0, -1));
+    if (undoStack.length === 0) return;
+    const previous = cloneAnnotations(undoStack[undoStack.length - 1]);
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, cloneAnnotations(annotations)]);
+    setAnnotations(previous);
+    setSelectedId(
+      previous.some((ann) => ann.id === selectedId)
+        ? selectedId
+        : previous.length > 0
+          ? previous[previous.length - 1].id
+          : null,
+    );
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const nextState = cloneAnnotations(redoStack[redoStack.length - 1]);
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, cloneAnnotations(annotations)]);
+    setAnnotations(nextState);
+    setSelectedId(
+      nextState.some((ann) => ann.id === selectedId)
+        ? selectedId
+        : nextState.length > 0
+          ? nextState[nextState.length - 1].id
+          : null,
+    );
   };
 
   const handleClear = () => {
+    if (annotations.length === 0) return;
+    rememberSnapshot();
     setAnnotations([]);
+    setSelectedId(null);
   };
 
-  const handleSave = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Render full resolution
+  const renderExportCanvas = useCallback(() => {
     const img = imgRef.current;
-    if (!img) return;
-
+    if (!img) return null;
     const exportCanvas = document.createElement("canvas");
     exportCanvas.width = img.width;
     exportCanvas.height = img.height;
-    const ctx = exportCanvas.getContext("2d")!;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return null;
     ctx.drawImage(img, 0, 0);
     for (const ann of annotations) {
       drawAnnotation(ctx, ann, 1);
     }
+    return exportCanvas;
+  }, [annotations, drawAnnotation]);
+
+  const handleSave = async () => {
+    const exportCanvas = renderExportCanvas();
+    if (!exportCanvas) return;
 
     setSaving(true);
     try {
@@ -319,17 +665,16 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
         defaultPath: `screenshot-${Date.now()}.png`,
         filters: [{ name: "PNG", extensions: ["png"] }],
       });
-      if (!path) { setSaving(false); return; }
+      if (!path) return;
 
       const dataUrl = exportCanvas.toDataURL("image/png");
       const base64 = dataUrl.split(",")[1];
-      // Write as binary via Rust
       const bytes = atob(base64);
       const arr = new Uint8Array(bytes.length);
       for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
       await invoke("write_binary_file", { path, data: Array.from(arr) });
-    } catch (e: any) {
-      // Fallback: download via blob
+      setStatus(t("saved"));
+    } catch {
       try {
         exportCanvas.toBlob((blob) => {
           if (!blob) return;
@@ -346,16 +691,64 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     }
   };
 
+  const handleCopyImage = async () => {
+    const exportCanvas = renderExportCanvas();
+    if (!exportCanvas) return;
+
+    setSaving(true);
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => exportCanvas.toBlob(resolve, "image/png"));
+      if (!blob) return;
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setStatus(t("copiedImage"));
+    } catch (err) {
+      console.error("[screenshot] copy failed", err);
+      setStatus(t("copyFailed"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedAnnotation = annotations.find((ann) => ann.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (!selectedAnnotation) return;
+    setColor(selectedAnnotation.color);
+  }, [selectedAnnotation]);
+
+  useEffect(() => {
+    if (!selectedAnnotation) return;
+    updateAnnotation(selectedAnnotation.id, (ann) => ({ ...ann, color }));
+  }, [color]); // selectedAnnotation intentionally from closure on current render
+
   const fullW = imgSize ? imgSize.w : 860;
   const fullH = imgSize ? imgSize.h : 560;
   const dispW = Math.round(fullW * scale);
   const dispH = Math.round(fullH * scale);
 
-  const toolBtn = (t2: Tool, icon: any, label: string) => (
+  const toolBtn = (nextTool: Tool, icon: ReactNode, label: string) => (
     <button
-      className={`screenshot-tool-btn ${tool === t2 ? "active" : ""}`}
-      onClick={() => setTool(t2)}
+      className={`screenshot-tool-btn ${tool === nextTool ? "active" : ""}`}
+      onClick={() => setTool(nextTool)}
       title={label}
+      type="button"
+    >
+      {icon}
+    </button>
+  );
+
+  const showTextEditor = selectedAnnotation?.type === "text";
+  const textStyleBtn = (
+    active: boolean,
+    icon: ReactNode,
+    title: string,
+    onClick: () => void,
+  ) => (
+    <button
+      type="button"
+      className={`screenshot-text-style-btn ${active ? "active" : ""}`}
+      title={title}
+      onClick={onClick}
     >
       {icon}
     </button>
@@ -373,6 +766,7 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
         </div>
 
         <div className="screenshot-toolbar">
+          {toolBtn("select", <MousePointer2 size={15} />, t("selectMove"))}
           {toolBtn("rect", <Square size={15} />, t("addRect"))}
           {toolBtn("arrow", <ArrowUpRight size={15} />, t("addArrow"))}
           {toolBtn("text", <Type size={15} />, t("addText"))}
@@ -387,14 +781,14 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
             style={{ position: "relative", cursor: "pointer" }}
           >
             <Palette size={15} />
-            <span
-              className="screenshot-color-dot"
-              style={{ background: color }}
-            />
+            <span className="screenshot-color-dot" style={{ background: color }} />
             <input
               type="color"
               value={color}
-              onChange={(e) => setColor(e.target.value)}
+              onChange={(e) => {
+                if (selectedAnnotation) rememberSnapshot();
+                setColor(e.target.value);
+              }}
               style={{
                 position: "absolute",
                 inset: 0,
@@ -411,10 +805,144 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
               key={c}
               className={`screenshot-color-swatch ${color === c ? "active" : ""}`}
               style={{ background: c }}
-              onClick={() => setColor(c)}
+              onClick={() => {
+                if (selectedAnnotation) rememberSnapshot();
+                setColor(c);
+              }}
               title={c}
+              type="button"
             />
           ))}
+
+          {showTextEditor && (
+            <>
+              <div className="screenshot-separator" />
+              <div className="screenshot-text-toolbar">
+                <textarea
+                  className="screenshot-text-toolbar-input"
+                  value={selectedAnnotation.text ?? DEFAULT_TEXT}
+                  onChange={(e) => {
+                    rememberSnapshot();
+                    updateAnnotation(selectedAnnotation.id, (ann) => ({
+                      ...ann,
+                      text: e.target.value,
+                    }));
+                  }}
+                  placeholder={t("textContent")}
+                  rows={2}
+                />
+                <select
+                  className="screenshot-text-toolbar-select"
+                  value={selectedAnnotation.fontFamily ?? "Arial"}
+                  onChange={(e) => {
+                    rememberSnapshot();
+                    updateAnnotation(selectedAnnotation.id, (ann) => ({
+                      ...ann,
+                      fontFamily: e.target.value,
+                    }));
+                  }}
+                >
+                  {FONT_OPTIONS.map((font) => (
+                    <option key={font.value} value={font.value}>
+                      {font.label}
+                    </option>
+                  ))}
+                </select>
+                <label className="screenshot-text-toolbar-size">
+                  <span>{t("textSize")}</span>
+                  <input
+                    type="range"
+                    min={14}
+                    max={72}
+                    value={selectedAnnotation.fontSize ?? DEFAULT_FONT_SIZE}
+                    onChange={(e) => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        fontSize: Number(e.target.value),
+                      }));
+                    }}
+                  />
+                </label>
+                <div className="screenshot-text-style-group">
+                  {textStyleBtn(
+                    (selectedAnnotation.fontWeight ?? "700") === "700",
+                    <Bold size={14} />,
+                    t("bold"),
+                    () => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        fontWeight: (ann.fontWeight ?? "700") === "700" ? "400" : "700",
+                      }));
+                    },
+                  )}
+                  {textStyleBtn(
+                    (selectedAnnotation.fontStyle ?? "normal") === "italic",
+                    <Italic size={14} />,
+                    t("italic"),
+                    () => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        fontStyle: (ann.fontStyle ?? "normal") === "italic" ? "normal" : "italic",
+                      }));
+                    },
+                  )}
+                  {textStyleBtn(
+                    Boolean(selectedAnnotation.underline),
+                    <UnderlineIcon size={14} />,
+                    t("underline"),
+                    () => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        underline: !ann.underline,
+                      }));
+                    },
+                  )}
+                </div>
+                <div className="screenshot-text-style-group">
+                  {textStyleBtn(
+                    (selectedAnnotation.textAlign ?? "left") === "left",
+                    <AlignLeft size={14} />,
+                    t("alignLeft"),
+                    () => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        textAlign: "left",
+                      }));
+                    },
+                  )}
+                  {textStyleBtn(
+                    (selectedAnnotation.textAlign ?? "left") === "center",
+                    <AlignCenter size={14} />,
+                    t("alignCenter"),
+                    () => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        textAlign: "center",
+                      }));
+                    },
+                  )}
+                  {textStyleBtn(
+                    (selectedAnnotation.textAlign ?? "left") === "right",
+                    <AlignRight size={14} />,
+                    t("alignRight"),
+                    () => {
+                      rememberSnapshot();
+                      updateAnnotation(selectedAnnotation.id, (ann) => ({
+                        ...ann,
+                        textAlign: "right",
+                      }));
+                    },
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           <div style={{ flex: 1 }} />
 
@@ -422,15 +950,26 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
             className="screenshot-tool-btn"
             onClick={handleUndo}
             title="Undo"
-            disabled={annotations.length === 0}
+            disabled={undoStack.length === 0}
+            type="button"
           >
             <Undo2 size={15} />
+          </button>
+          <button
+            className="screenshot-tool-btn"
+            onClick={handleRedo}
+            title="Redo"
+            disabled={redoStack.length === 0}
+            type="button"
+          >
+            <Redo2 size={15} />
           </button>
           <button
             className="screenshot-tool-btn"
             onClick={handleClear}
             title="Clear"
             disabled={annotations.length === 0}
+            type="button"
           >
             <Trash2 size={15} />
           </button>
@@ -448,42 +987,38 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
               ref={overlayRef}
               width={fullW}
               height={fullH}
-              style={{ position: "absolute", top: 0, left: 0, width: dispW, height: dispH, cursor: tool === "select" ? "default" : "crosshair" }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: dispW,
+                height: dispH,
+                cursor: tool === "select" ? (dragging ? "grabbing" : "grab") : "crosshair",
+              }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
             />
           </div>
-          {textInput && (
-            <input
-              autoFocus
-              className="screenshot-text-input"
-              style={{
-                left: textInput.x * scale,
-                top: textInput.y * scale - 20,
-                color,
-              }}
-              value={textValue}
-              onChange={(e) => setTextValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addTextAnnotation();
-                if (e.key === "Escape") setTextInput(null);
-              }}
-              onBlur={addTextAnnotation}
-            />
-          )}
         </div>
 
         <div className="editor-footer">
           <div className="status">
-            {annotations.length > 0
-              ? `${annotations.length} annotation`
-              : ""}
+            {status ||
+              (annotations.length > 0
+                ? `${annotations.length} ${t("annotationCount")}`
+                : tool === "select"
+                  ? t("selectMoveHint")
+                  : t("screenshotHint"))}
           </div>
           <button className="btn ghost" onClick={onClose}>
             {t("cancel")}
           </button>
-          <button className="btn primary" onClick={handleSave} disabled={saving}>
+          <button className="btn ghost" onClick={() => void handleCopyImage()} disabled={saving}>
+            <Copy size={14} /> {t("copy")}
+          </button>
+          <button className="btn primary" onClick={() => void handleSave()} disabled={saving}>
             {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
             {t("save")}
           </button>

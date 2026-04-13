@@ -8,10 +8,13 @@ struct TranscriptionResponse {
 }
 
 pub async fn transcribe(audio: Vec<u8>, mime: &str) -> Result<String> {
-    let api_key = std::env::var("GROQ_API_KEY")
-        .map_err(|_| anyhow!("GROQ_API_KEY .env'de tanımlı değil"))?;
-    let model = std::env::var("GROQ_WHISPER_MODEL")
-        .unwrap_or_else(|_| "whisper-large-v3".to_string());
+    let api_key = std::env::var("GROQ_API_KEY").map_err(|_| {
+        anyhow!(
+            "GROQ_API_KEY .env'de tanimli degil. Bu anahtar sadece sesli not transkripsiyonu icin kullaniliyor."
+        )
+    })?;
+    let model =
+        std::env::var("GROQ_WHISPER_MODEL").unwrap_or_else(|_| "whisper-large-v3".to_string());
 
     let ext = match mime {
         m if m.contains("webm") => "webm",
@@ -20,15 +23,14 @@ pub async fn transcribe(audio: Vec<u8>, mime: &str) -> Result<String> {
         m if m.contains("wav") => "wav",
         _ => "webm",
     };
-    let filename = format!("audio.{}", ext);
-    let size = audio.len();
 
-    // Debug: son kaydı temp'e yaz, kullanıcı dinleyebilsin
-    let dump_path = std::env::temp_dir().join(format!("nodesk_last_audio.{}", ext));
+    let filename = format!("audio.{ext}");
+    let dump_path = std::env::temp_dir().join(format!("nodesk_last_audio.{ext}"));
     let _ = std::fs::write(&dump_path, &audio);
+
     eprintln!(
         "[whisper] {} bytes, mime={}, model={}, dump={}",
-        size,
+        audio.len(),
         mime,
         model,
         dump_path.display()
@@ -55,8 +57,9 @@ pub async fn transcribe(audio: Vec<u8>, mime: &str) -> Result<String> {
     let status = res.status();
     let body = res.text().await?;
     if !status.is_success() {
-        return Err(anyhow!("Groq {}: {}", status, body));
+        return Err(anyhow!("Groq ses transkripsiyon hatasi {}: {}", status, body));
     }
+
     let parsed: TranscriptionResponse = serde_json::from_str(&body)
         .map_err(|e| anyhow!("parse hata: {} · body: {}", e, body))?;
     let text = parsed.text.trim().to_string();
@@ -65,12 +68,12 @@ pub async fn transcribe(audio: Vec<u8>, mime: &str) -> Result<String> {
 
     let lower = text.to_lowercase();
     let is_hallucination = (lower.contains("altyaz") && lower.contains("m.k"))
-        || lower.contains("abone olmayı unutmayın")
-        || lower == "altyazı m.k.";
+        || lower.contains("abone olmayi unutmayin")
+        || lower == "altyazi m.k.";
+
     if is_hallucination {
         return Err(anyhow!(
-            "Mikrofon ses yakalamıyor (Whisper boş kayıttan altyazı uydurdu). \
-             Windows ses ayarlarından doğru mikrofonu seç ve ses seviyesini kontrol et."
+            "Mikrofon ses yakalamiyor. Windows ses ayarlarindan dogru mikrofonu sec ve ses seviyesini kontrol et."
         ));
     }
 

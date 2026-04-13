@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Trash2, X, Pencil, Search, FileText, Plus, Sparkles, Loader2 } from "lucide-react";
-import { aiFixText, deleteNote, getNote, listNotes, saveNote, type Note } from "./lib/tauri";
+import { FileText, Loader2, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { confirmDialog } from "./components/Dialog";
+import ErrorBubble from "./components/ErrorBubble";
 import { sanitizeAiHtml } from "./lib/aiHtml";
 import { useT } from "./lib/i18n";
+import { aiFixText, deleteNote, getNote, listNotes, saveNote, type Note } from "./lib/tauri";
 
 function stripHtml(html: string): string {
   const div = document.createElement("div");
@@ -11,21 +12,37 @@ function stripHtml(html: string): string {
   return div.textContent?.trim() ?? "";
 }
 
-function formatDate(ms: number): string {
+function formatShortDate(ms: number): string {
   const d = new Date(ms);
   const now = new Date();
   const sameDay =
     d.getDate() === now.getDate() &&
     d.getMonth() === now.getMonth() &&
     d.getFullYear() === now.getFullYear();
+
   if (sameDay) {
     return d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
   }
+
   return d.toLocaleDateString("tr-TR", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
+}
+
+function formatLongDate(ms: number): string {
+  return new Date(ms).toLocaleString("tr-TR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getErrorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : String(value ?? "Bilinmeyen hata");
 }
 
 interface Props {
@@ -40,47 +57,58 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [aiBusyId, setAiBusyId] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const [tooltipState, setTooltipState] = useState<{
+    id: number | null;
+    placement: "top" | "bottom";
+  }>({ id: null, placement: "top" });
 
   const refresh = useCallback(async () => {
     try {
       const list = await listNotes();
       setNotes(list);
+      setError("");
+    } catch (err) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
-  }, [refresh, onClose]);
+  }, [onClose, refresh]);
 
-  const filtered = notes.filter((n) => {
+  const filtered = notes.filter((note) => {
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     return (
-      n.title.toLowerCase().includes(q) ||
-      stripHtml(n.content).toLowerCase().includes(q)
+      note.title.toLowerCase().includes(q) ||
+      stripHtml(note.content).toLowerCase().includes(q)
     );
   });
 
   const handleAiFix = async (e: React.MouseEvent, note: Note) => {
     e.stopPropagation();
     if (aiBusyId != null) return;
+
     setAiBusyId(note.id);
     try {
       const full = await getNote(note.id);
       const plain = stripHtml(full.content);
       if (!plain) return;
+
       const fixed = await aiFixText(plain, "fix");
       await saveNote(note.id, full.title, sanitizeAiHtml(fixed));
+      setError("");
       await refresh();
     } catch (err) {
-      console.error("[history] ai fix err", err);
+      setError(`AI: ${getErrorMessage(err)}`);
     } finally {
       setAiBusyId(null);
     }
@@ -96,13 +124,35 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
       danger: true,
     });
     if (!ok) return;
-    await deleteNote(id);
-    await refresh();
+
+    try {
+      await deleteNote(id);
+      setError("");
+      await refresh();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  const handleTooltipEnter = (e: React.MouseEvent<HTMLDivElement>, id: number) => {
+    const itemRect = e.currentTarget.getBoundingClientRect();
+    const listRect = e.currentTarget.parentElement?.getBoundingClientRect();
+    if (!listRect) {
+      setTooltipState({ id, placement: "top" });
+      return;
+    }
+
+    const spaceAbove = itemRect.top - listRect.top;
+    const spaceBelow = listRect.bottom - itemRect.bottom;
+    const placement = spaceAbove < 150 && spaceBelow > spaceAbove ? "bottom" : "top";
+    setTooltipState({ id, placement });
   };
 
   return (
     <div className="editor-shell">
       <div className="editor-card">
+        {error && <ErrorBubble message={error} onClose={() => setError("")} />}
+
         <div className="editor-titlebar">
           <button onClick={onNewNote} title={t("newNote")}>
             <Plus size={14} />
@@ -124,60 +174,87 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
 
         <div className="history-list">
           {loading && <div className="history-empty">{t("loading")}</div>}
+
           {!loading && filtered.length === 0 && (
             <div className="history-empty">
               <FileText size={28} />
               <span>{query ? t("noMatch") : t("noNotes")}</span>
             </div>
           )}
-          {filtered.map((n) => {
-            const preview = stripHtml(n.content).slice(0, 80);
+
+          {filtered.map((note) => {
+            const rawText = stripHtml(note.content);
+            const preview = rawText.slice(0, 80);
+            const tooltipText = rawText.slice(0, 180);
+
             return (
               <div
-                key={n.id}
+                key={note.id}
                 className="history-item"
-                onClick={() => onOpenNote(n.id)}
+                onClick={() => onOpenNote(note.id)}
+                onMouseEnter={(e) => handleTooltipEnter(e, note.id)}
+                onMouseLeave={() => setTooltipState((prev) => ({ ...prev, id: null }))}
               >
                 <div className="history-item-main">
                   <div className="history-item-title">
-                    {n.title.trim() || t("untitled")}
+                    {note.title.trim() || t("untitled")}
                   </div>
-                  {preview && (
-                    <div className="history-item-preview">{preview}</div>
-                  )}
-                  <div className="history-item-date">
-                    {formatDate(n.updated_at)}
-                  </div>
+
+                  {preview && <div className="history-item-preview">{preview}</div>}
+
+                  <div className="history-item-date">{formatShortDate(note.updated_at)}</div>
                 </div>
+
                 <div className="history-item-actions">
                   <button
                     title={t("aiFix")}
                     disabled={aiBusyId != null}
-                    onClick={(e) => handleAiFix(e, n)}
+                    onClick={(e) => void handleAiFix(e, note)}
                     style={{ color: "var(--accent-deep)" }}
                   >
-                    {aiBusyId === n.id ? (
+                    {aiBusyId === note.id ? (
                       <Loader2 size={14} className="spin" />
                     ) : (
                       <Sparkles size={14} />
                     )}
                   </button>
+
                   <button
                     title={t("edit")}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onOpenNote(n.id);
+                      onOpenNote(note.id);
                     }}
                   >
                     <Pencil size={14} />
                   </button>
+
                   <button
                     title={t("delete")}
                     className="danger"
-                    onClick={(e) => handleDelete(e, n.id)}
+                    onClick={(e) => void handleDelete(e, note.id)}
                   >
                     <Trash2 size={14} />
                   </button>
+                </div>
+
+                <div
+                  className={`history-tooltip ${
+                    tooltipState.id === note.id && tooltipState.placement === "bottom"
+                      ? "bottom"
+                      : ""
+                  }`}
+                  aria-hidden="true"
+                >
+                  <div className="history-tooltip-title">
+                    {note.title.trim() || t("untitled")}
+                  </div>
+                  {tooltipText && <div className="history-tooltip-preview">{tooltipText}</div>}
+                  <div className="history-tooltip-meta">
+                    <span>{t("createdAt")}: {formatLongDate(note.created_at)}</span>
+                    <span>{t("updatedAt")}: {formatLongDate(note.updated_at)}</span>
+                    <span>{t("charCount")}: {rawText.length}</span>
+                  </div>
                 </div>
               </div>
             );

@@ -52,6 +52,7 @@ const translations = {
   "open": { tr: "Ac", en: "Open" },
   "export": { tr: "Disa aktar", en: "Export" },
   "copy": { tr: "Kopyala", en: "Copy" },
+  "copyError": { tr: "Hatayi kopyala", en: "Copy error" },
   "copied": { tr: "Kopyalandi", en: "Copied" },
   "nothingToCopy": { tr: "Kopyalanacak icerik yok", en: "Nothing to copy" },
   "saving": { tr: "Kaydediliyor…", en: "Saving…" },
@@ -69,6 +70,9 @@ const translations = {
   "aiFix": { tr: "AI ile duzelt", en: "AI fix" },
   "aiDone": { tr: "AI tamamladi", en: "AI done" },
   "noTextToFix": { tr: "Duzeltilecek metin yok", en: "No text to fix" },
+  "errorTitle": { tr: "Hata", en: "Error" },
+  "closeError": { tr: "Hatayi kapat", en: "Close error" },
+  "deletedNote": { tr: "Not silindi", en: "Note deleted" },
 
   // Toolbar
   "heading1": { tr: "Baslik 1", en: "Heading 1" },
@@ -102,6 +106,9 @@ const translations = {
   "deleteNote": { tr: "Notu sil", en: "Delete note" },
   "deleteConfirm": { tr: "Bu notu kalici olarak silmek istedigine emin misin?", en: "Are you sure you want to permanently delete this note?" },
   "giveUp": { tr: "Vazgec", en: "Cancel" },
+  "createdAt": { tr: "Olusturma", en: "Created" },
+  "updatedAt": { tr: "Guncelleme", en: "Updated" },
+  "charCount": { tr: "Karakter", en: "Characters" },
 
   // Settings
   "settingsTitle": { tr: "ayarlar", en: "settings" },
@@ -111,6 +118,10 @@ const translations = {
   "refreshModels": { tr: "Modelleri yenile", en: "Refresh models" },
   "apiKey": { tr: "API Key", en: "API Key" },
   "serverUrl": { tr: "Sunucu URL", en: "Server URL" },
+  "voiceTranscriptionHint": {
+    tr: "Sesli not transkripsiyonu Groq Whisper kullanir. AI duzeltme ise secili saglayiciyi kullanir.",
+    en: "Voice transcription uses Groq Whisper. AI fixing uses the selected provider.",
+  },
   "notionIntegration": { tr: "Notion Entegrasyonu", en: "Notion Integration" },
   "databaseId": { tr: "Database ID", en: "Database ID" },
   "titleProperty": { tr: "Baslik Property", en: "Title Property" },
@@ -128,6 +139,18 @@ const translations = {
   "color": { tr: "Renk", en: "Color" },
   "saveScreenshot": { tr: "Kaydet", en: "Save" },
   "discardScreenshot": { tr: "Iptal", en: "Discard" },
+  "selectMove": { tr: "Sec ve tasI", en: "Select and move" },
+  "selectMoveHint": { tr: "Ogeleri secip fareyle tasiyabilirsin", en: "Select and drag annotations" },
+  "screenshotHint": { tr: "Aractan birini secip cizime basla", en: "Pick a tool and start drawing" },
+  "annotationCount": { tr: "isaret", en: "annotations" },
+  "copiedImage": { tr: "Gorsel panoya kopyalandi", en: "Image copied to clipboard" },
+  "copyFailed": { tr: "Kopyalama basarisiz", en: "Copy failed" },
+  "textEditorReady": { tr: "Yazi eklendi, ustten duzenleyebilirsin", en: "Text added, edit it from the toolbar" },
+  "textContent": { tr: "Yazi", en: "Text" },
+  "textSize": { tr: "Boyut", en: "Size" },
+  "alignLeft": { tr: "Sola", en: "Align left" },
+  "alignCenter": { tr: "Ortala", en: "Align center" },
+  "alignRight": { tr: "Saga", en: "Align right" },
 } as const;
 
 type TransKey = keyof typeof translations;

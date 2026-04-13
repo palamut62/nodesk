@@ -30,11 +30,15 @@ function App() {
   const [phase, setPhase] = useState<Phase>("in");
   const [frame, setFrame] = useState(VIEW_SIZES.pill);
   const [noteToLoad, setNoteToLoad] = useState<Note | null>(null);
+  const [editorReturnView, setEditorReturnView] = useState<"pill" | "history">("pill");
   const [screenshotData, setScreenshotData] = useState<string | null>(null);
   const busyRef = useRef(false);
 
   const morphTo = useCallback(
-    async (target: ViewKind, opts?: { noteId?: number | null }) => {
+    async (
+      target: ViewKind,
+      opts?: { noteId?: number | null; returnTo?: "pill" | "history" },
+    ) => {
       if (busyRef.current) return;
       busyRef.current = true;
 
@@ -57,6 +61,7 @@ function App() {
       await new Promise((r) => setTimeout(r, CROSSFADE_MID));
 
       if (target === "editor") {
+        setEditorReturnView(opts?.returnTo ?? "pill");
         if (opts?.noteId != null) {
           try {
             setNoteToLoad(await getNote(opts.noteId));
@@ -137,14 +142,14 @@ function App() {
         {view === "editor" && (
           <Editor
             noteToLoad={noteToLoad}
-            onClose={() => morphTo("pill")}
+            onClose={() => morphTo(editorReturnView)}
           />
         )}
         {view === "history" && (
           <History
-            onOpenNote={(id) => morphTo("editor", { noteId: id })}
+            onOpenNote={(id) => morphTo("editor", { noteId: id, returnTo: "history" })}
             onClose={() => morphTo("pill")}
-            onNewNote={() => morphTo("editor")}
+            onNewNote={() => morphTo("editor", { returnTo: "history" })}
           />
         )}
         {view === "settings" && (
