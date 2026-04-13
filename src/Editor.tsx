@@ -31,16 +31,24 @@ import {
   X,
   Loader2,
   Mic,
+  FolderOpen,
+  FileDown,
+  Copy,
 } from "lucide-react";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { mdToHtml, htmlToMd, txtToHtml, htmlToTxt } from "./lib/fileFormat";
 import {
   aiFixText,
   saveNote,
   startLiveWhisper,
+  readTextFile,
+  writeTextFile,
   type LiveWhisperSession,
   type Note,
 } from "./lib/tauri";
 import { promptDialog } from "./components/Dialog";
 import { sanitizeAiHtml } from "./lib/aiHtml";
+import { useT } from "./lib/i18n";
 
 interface Props {
   noteToLoad: Note | null;
@@ -48,6 +56,7 @@ interface Props {
 }
 
 export default function Editor({ noteToLoad, onClose }: Props) {
+  const t = useT();
   const [currentId, setCurrentId] = useState<number | null>(
     noteToLoad?.id ?? null,
   );
@@ -149,15 +158,25 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     if (!editor) return;
     const trimmed = text.trim();
     if (!trimmed) {
-      setStatus("Ses bulunamadı");
+      setStatus(t("noSound"));
       return;
     }
-    editor.chain().focus().insertContent(trimmed + " ").run();
+    // AI ile duzelt
+    let processed = trimmed;
+    try {
+      setStatus(t("aiFixing"));
+      const fixed = await aiFixText(trimmed, "fix");
+      const clean = fixed.trim();
+      if (clean && !clean.startsWith("[HATA]")) processed = clean;
+    } catch {
+      // AI basarisizsa ham metni ekle
+    }
+    editor.chain().focus().insertContent(processed + " ").run();
     const plainBeforeTitle = editor.getText().trim();
     const autoTitle =
       title.trim() ||
       (currentId == null && plainBeforeTitle
-        ? `Sesli not · ${new Date().toLocaleString("tr-TR", {
+        ? `${t("voiceNoteTitle")} · ${new Date().toLocaleString("tr-TR", {
             day: "2-digit",
             month: "short",
             hour: "2-digit",
@@ -165,7 +184,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
           })}`
         : undefined);
     await persistEditorNote(autoTitle);
-    setStatus("Ses notu kaydedildi");
+    setStatus(t("voiceNoteSaved"));
     setTimeout(() => setStatus(""), 1500);
   };
 
@@ -177,7 +196,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
       liveRef.current = null;
       setRecording(false);
       setTranscribing(true);
-      setStatus("🔄 işleniyor…");
+      setStatus(t("processing"));
       try {
         const text = await session.stop();
         await insertTranscript(text);
@@ -198,9 +217,56 @@ export default function Editor({ noteToLoad, onClose }: Props) {
       });
       liveRef.current = session;
       setRecording(true);
-      setStatus("🔴 kaydediyor… (Ctrl+Shift+V ile durdur)");
+      setStatus(t("recording"));
     } catch (e: any) {
       setStatus(`Mikrofon: ${e}`);
+    }
+  };
+
+  const handleOpenFile = async () => {
+    try {
+      const picked = await openDialog({
+        multiple: false,
+        filters: [
+          { name: "Metin / Markdown", extensions: ["txt", "md", "markdown"] },
+          { name: "Tümü", extensions: ["*"] },
+        ],
+      });
+      if (!picked || typeof picked !== "string") return;
+      const content = await readTextFile(picked);
+      const name = picked.split(/[\\/]/).pop() || "";
+      const base = name.replace(/\.(txt|md|markdown)$/i, "");
+      const isMd = /\.(md|markdown)$/i.test(name);
+      if (!editor) return;
+      const html = isMd ? await mdToHtml(content) : txtToHtml(content);
+      editor.commands.setContent(html);
+      setTitle(base);
+      setStatus(`Açıldı: ${name}`);
+      setTimeout(() => setStatus(""), 2000);
+    } catch (e: any) {
+      setStatus(`Açma hatası: ${e}`);
+    }
+  };
+
+  const handleExportFile = async () => {
+    if (!editor) return;
+    try {
+      const path = await saveDialog({
+        defaultPath: (title || "not") + ".md",
+        filters: [
+          { name: "Markdown", extensions: ["md"] },
+          { name: "Metin", extensions: ["txt"] },
+        ],
+      });
+      if (!path) return;
+      const isMd = /\.(md|markdown)$/i.test(path);
+      const html = editor.getHTML();
+      const content = isMd ? htmlToMd(html) : htmlToTxt(html);
+      await writeTextFile(path, content);
+      setStatus(`Kaydedildi: ${path.split(/[\\/]/).pop()}`);
+      setTimeout(() => setStatus(""), 2000);
+    } catch (e: any) {
+      setStatus(`Kaydetme hatası: ${e}`);
     }
   };
 
@@ -209,17 +275,17 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     const html = editor.getHTML();
     const plain = editor.getText();
     if (!title.trim() && !plain.trim()) {
-      setStatus("Boş not kaydedilemez");
+      setStatus(t("emptyNote"));
       return;
     }
     setBusy(true);
-    setStatus(currentId ? "Güncelleniyor…" : "Kaydediliyor…");
+    setStatus(currentId ? t("updating") : t("saving"));
     try {
       const savedId = await saveNote(currentId, title, html);
       if (currentId == null) {
         setCurrentId(savedId);
       }
-      setStatus(currentId ? "Güncellendi" : "Kaydedildi");
+      setStatus(currentId ? t("updated") : t("savedNote"));
       setTimeout(() => {
         onClose();
       }, 350);
@@ -234,15 +300,15 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     if (!editor) return;
     const text = editor.getText();
     if (!text.trim()) {
-      setStatus("Düzeltilecek metin yok");
+      setStatus(t("noTextToFix"));
       return;
     }
     setAiBusy(true);
-    setStatus("AI düzeltiyor…");
+    setStatus(t("aiFixing"));
     try {
       const fixed = await aiFixText(text, "fix");
       editor.commands.setContent(sanitizeAiHtml(fixed));
-      setStatus("AI tamamladı");
+      setStatus(t("aiDone"));
       setTimeout(() => setStatus(""), 1500);
     } catch (e: any) {
       setStatus(`AI hata: ${e}`);
@@ -274,8 +340,8 @@ export default function Editor({ noteToLoad, onClose }: Props) {
       <div className="editor-card">
         <div className="editor-titlebar">
           <div style={{ width: 26 }} />
-          <div className="title">{currentId ? "notu düzenle" : "yeni not"}</div>
-          <button onClick={onClose} title="Kapat">
+          <div className="title">{currentId ? t("editNote") : t("newNoteTitle")}</div>
+          <button onClick={onClose} title={t("close")}>
             <X size={14} />
           </button>
         </div>
@@ -286,19 +352,19 @@ export default function Editor({ noteToLoad, onClose }: Props) {
               editor.isActive("heading", { level: 1 }),
               () => editor.chain().focus().toggleHeading({ level: 1 }).run(),
               <Heading1 size={15} />,
-              "Başlık 1",
+              t("heading1"),
             )}
             {tb(
               editor.isActive("heading", { level: 2 }),
               () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
               <Heading2 size={15} />,
-              "Başlık 2",
+              t("heading2"),
             )}
             {tb(
               editor.isActive("heading", { level: 3 }),
               () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
               <Heading3 size={15} />,
-              "Başlık 3",
+              t("heading3"),
             )}
           </div>
 
@@ -307,37 +373,37 @@ export default function Editor({ noteToLoad, onClose }: Props) {
               editor.isActive("bold"),
               () => editor.chain().focus().toggleBold().run(),
               <Bold size={15} />,
-              "Kalın",
+              t("bold"),
             )}
             {tb(
               editor.isActive("italic"),
               () => editor.chain().focus().toggleItalic().run(),
               <Italic size={15} />,
-              "İtalik",
+              t("italic"),
             )}
             {tb(
               editor.isActive("underline"),
               () => editor.chain().focus().toggleUnderline().run(),
               <UnderlineIcon size={15} />,
-              "Altı çizili",
+              t("underline"),
             )}
             {tb(
               editor.isActive("strike"),
               () => editor.chain().focus().toggleStrike().run(),
               <Strikethrough size={15} />,
-              "Üstü çizili",
+              t("strikethrough"),
             )}
             {tb(
               editor.isActive("code"),
               () => editor.chain().focus().toggleCode().run(),
               <Code size={15} />,
-              "Inline code",
+              t("inlineCode"),
             )}
             {tb(
               editor.isActive("highlight"),
               () => editor.chain().focus().toggleHighlight().run(),
               <Highlighter size={15} />,
-              "Vurgula",
+              t("highlight"),
             )}
           </div>
 
@@ -346,52 +412,52 @@ export default function Editor({ noteToLoad, onClose }: Props) {
               editor.isActive("bulletList"),
               () => editor.chain().focus().toggleBulletList().run(),
               <List size={15} />,
-              "Madde",
+              t("bullet"),
             )}
             {tb(
               editor.isActive("orderedList"),
               () => editor.chain().focus().toggleOrderedList().run(),
               <ListOrdered size={15} />,
-              "Numaralı",
+              t("numbered"),
             )}
             {tb(
               editor.isActive("taskList"),
               () => editor.chain().focus().toggleTaskList().run(),
               <CheckSquare size={15} />,
-              "To-do",
+              t("todo"),
             )}
             {tb(
               editor.isActive("blockquote"),
               () => editor.chain().focus().toggleBlockquote().run(),
               <Quote size={15} />,
-              "Alıntı",
+              t("quote"),
             )}
             {tb(
               false,
               () => editor.chain().focus().setHorizontalRule().run(),
               <Minus size={15} />,
-              "Ayraç",
+              t("divider"),
             )}
             {tb(
               editor.isActive("link"),
               async () => {
                 const url = await promptDialog({
-                  title: "Link ekle",
-                  message: "URL gir:",
+                  title: t("addLink"),
+                  message: t("enterUrl"),
                   placeholder: "https://…",
-                  confirmText: "Ekle",
+                  confirmText: t("add"),
                 });
                 if (url) editor.chain().focus().setLink({ href: url }).run();
               },
               <LinkIcon size={15} />,
-              "Link",
+              t("link"),
             )}
           </div>
 
           <div className="group" style={{ marginLeft: "auto" }}>
             <button
               onClick={toggleVoice}
-              title="Sesli not (Ctrl+Shift+V)"
+              title={t("voiceNote")}
               className={recording ? "mic-recording" : ""}
               style={{ color: recording ? undefined : "var(--accent-deep)" }}
             >
@@ -400,7 +466,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
             <button
               onClick={handleAiFix}
               disabled={aiBusy}
-              title="AI ile düzelt"
+              title={t("aiFix")}
               style={{ color: "var(--accent-deep)" }}
             >
               {aiBusy ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />}
@@ -410,7 +476,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
 
         <input
           className="editor-title-input"
-          placeholder="Başlıksız"
+          placeholder={t("untitled")}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -421,14 +487,36 @@ export default function Editor({ noteToLoad, onClose }: Props) {
 
         <div className="editor-footer">
           <div className="status">
-            {status || "Ctrl+S kaydet · Ctrl+Shift+V sesli not · Esc iptal"}
+            {status || t("statusHint")}
           </div>
+          <button
+            className="btn ghost"
+            onClick={() => {
+              if (!editor) return;
+              const text = editor.getText();
+              if (!text.trim()) { setStatus(t("nothingToCopy")); return; }
+              navigator.clipboard.writeText(text).then(() => {
+                setStatus(t("copied"));
+                setTimeout(() => setStatus(""), 1500);
+              });
+            }}
+            disabled={busy}
+            title="Notu kopyala"
+          >
+            <Copy size={14} /> {t("copy")}
+          </button>
+          <button className="btn ghost" onClick={handleOpenFile} disabled={busy} title="TXT / MD">
+            <FolderOpen size={14} /> {t("open")}
+          </button>
+          <button className="btn ghost" onClick={handleExportFile} disabled={busy} title="TXT / MD">
+            <FileDown size={14} /> {t("export")}
+          </button>
           <button className="btn ghost" onClick={onClose} disabled={busy}>
-            İptal
+            {t("cancel")}
           </button>
           <button className="btn primary" onClick={handleSave} disabled={busy}>
             {busy ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
-            Kaydet
+            {t("save")}
           </button>
         </div>
       </div>

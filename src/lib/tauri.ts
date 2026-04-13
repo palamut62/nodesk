@@ -25,6 +25,9 @@ export interface Settings {
   openrouter_api_key: string;
   openrouter_model: string;
   autostart: boolean;
+  ai_provider: string;
+  ollama_base_url: string;
+  ollama_model: string;
 }
 
 export interface ModelInfo {
@@ -38,6 +41,9 @@ export const saveSettings = (payload: {
   openrouter_api_key?: string;
   openrouter_model?: string;
   autostart?: boolean;
+  ai_provider?: string;
+  ollama_base_url?: string;
+  ollama_model?: string;
 }) => invoke<void>("save_settings", { payload });
 
 export const listModels = () => invoke<ModelInfo[]>("list_models");
@@ -382,18 +388,26 @@ export function startSpeech(opts?: {
   };
 }
 
+export const readTextFile = (path: string) =>
+  invoke<string>("read_text_file", { path });
+export const writeTextFile = (path: string, content: string) =>
+  invoke<void>("write_text_file", { path, content });
+
 export const startDrag = () => invoke<void>("start_drag");
 export const quitApp = () => invoke<void>("quit_app");
 
 // ============ MORPH / WINDOW ============
 
-export type ViewKind = "pill" | "editor" | "history" | "settings";
+export const captureScreen = () => invoke<string>("capture_screen");
+
+export type ViewKind = "pill" | "editor" | "history" | "settings" | "screenshot";
 
 export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
-  pill: { w: 310, h: 56 },
+  pill: { w: 360, h: 56 },
   editor: { w: 700, h: 600 },
   history: { w: 460, h: 600 },
   settings: { w: 460, h: 520 },
+  screenshot: { w: 900, h: 700 },
 };
 
 export async function setAlwaysOnTop(value: boolean) {

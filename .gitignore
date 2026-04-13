@@ -5,9 +5,9 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-node_modules
-dist
-dist-ssr
+node_modules/
+dist/
+dist-ssr/
 *.local
 
 # Editor
@@ -15,10 +15,12 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+.claude/
 
 # Env
 .env
-.env.local
+.env.*
+!.env.example
 
-# Rust
-src-tauri/target
+# Rust / Tauri build artifacts
+src-tauri/target/

@@ -3,6 +3,7 @@ import { Trash2, X, Pencil, Search, FileText, Plus, Sparkles, Loader2 } from "lu
 import { aiFixText, deleteNote, getNote, listNotes, saveNote, type Note } from "./lib/tauri";
 import { confirmDialog } from "./components/Dialog";
 import { sanitizeAiHtml } from "./lib/aiHtml";
+import { useT } from "./lib/i18n";
 
 function stripHtml(html: string): string {
   const div = document.createElement("div");
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export default function History({ onOpenNote, onNewNote, onClose }: Props) {
+  const t = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -87,10 +89,10 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
   const handleDelete = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     const ok = await confirmDialog({
-      title: "Notu sil",
-      message: "Bu notu kalıcı olarak silmek istediğine emin misin?",
-      confirmText: "Sil",
-      cancelText: "Vazgeç",
+      title: t("deleteNote"),
+      message: t("deleteConfirm"),
+      confirmText: t("delete"),
+      cancelText: t("giveUp"),
       danger: true,
     });
     if (!ok) return;
@@ -102,11 +104,11 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
     <div className="editor-shell">
       <div className="editor-card">
         <div className="editor-titlebar">
-          <button onClick={onNewNote} title="Yeni not">
+          <button onClick={onNewNote} title={t("newNote")}>
             <Plus size={14} />
           </button>
-          <div className="title">geçmiş notlar</div>
-          <button onClick={onClose} title="Kapat">
+          <div className="title">{t("historyTitle")}</div>
+          <button onClick={onClose} title={t("close")}>
             <X size={14} />
           </button>
         </div>
@@ -114,18 +116,18 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
         <div className="history-search">
           <Search size={14} />
           <input
-            placeholder="Ara…"
+            placeholder={t("search")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
 
         <div className="history-list">
-          {loading && <div className="history-empty">Yükleniyor…</div>}
+          {loading && <div className="history-empty">{t("loading")}</div>}
           {!loading && filtered.length === 0 && (
             <div className="history-empty">
               <FileText size={28} />
-              <span>{query ? "Eşleşen not yok" : "Henüz not yok"}</span>
+              <span>{query ? t("noMatch") : t("noNotes")}</span>
             </div>
           )}
           {filtered.map((n) => {
@@ -138,7 +140,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
               >
                 <div className="history-item-main">
                   <div className="history-item-title">
-                    {n.title.trim() || "Başlıksız"}
+                    {n.title.trim() || t("untitled")}
                   </div>
                   {preview && (
                     <div className="history-item-preview">{preview}</div>
@@ -149,7 +151,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
                 </div>
                 <div className="history-item-actions">
                   <button
-                    title="AI ile düzelt"
+                    title={t("aiFix")}
                     disabled={aiBusyId != null}
                     onClick={(e) => handleAiFix(e, n)}
                     style={{ color: "var(--accent-deep)" }}
@@ -161,7 +163,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
                     )}
                   </button>
                   <button
-                    title="Düzenle"
+                    title={t("edit")}
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenNote(n.id);
@@ -170,7 +172,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
                     <Pencil size={14} />
                   </button>
                   <button
-                    title="Sil"
+                    title={t("delete")}
                     className="danger"
                     onClick={(e) => handleDelete(e, n.id)}
                   >

@@ -11,10 +11,28 @@ pub struct Settings {
     pub openrouter_model: String,
     #[serde(default)]
     pub autostart: bool,
+    #[serde(default = "default_provider")]
+    pub ai_provider: String,
+    #[serde(default = "default_ollama_url")]
+    pub ollama_base_url: String,
+    #[serde(default = "default_ollama_model")]
+    pub ollama_model: String,
 }
 
 fn default_model() -> String {
     "openai/gpt-4o-mini".to_string()
+}
+
+fn default_provider() -> String {
+    "openrouter".to_string()
+}
+
+fn default_ollama_url() -> String {
+    "http://127.0.0.1:11434".to_string()
+}
+
+fn default_ollama_model() -> String {
+    "gemma4:31b-cloud".to_string()
 }
 
 pub struct SettingsStore {
@@ -34,6 +52,11 @@ impl SettingsStore {
                     openrouter_model: std::env::var("OPENROUTER_MODEL")
                         .unwrap_or_else(|_| default_model()),
                     autostart: false,
+                    ai_provider: std::env::var("AI_PROVIDER").unwrap_or_else(|_| default_provider()),
+                    ollama_base_url: std::env::var("OLLAMA_BASE_URL")
+                        .unwrap_or_else(|_| default_ollama_url()),
+                    ollama_model: std::env::var("OLLAMA_MODEL")
+                        .unwrap_or_else(|_| default_ollama_model()),
                 }
             });
         Self {

@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
+  aiFixText,
   hideToTray,
   saveNote,
   startDrag,
   startLiveWhisper,
   type LiveWhisperSession,
 } from "./lib/tauri";
-import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon } from "lucide-react";
+import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera } from "lucide-react";
+import { useT } from "./lib/i18n";
 
 interface Props {
   onNewNote: () => void;
   onHistory: () => void;
   onSettings: () => void;
+  onScreenshot: () => void;
 }
 
-export default function Widget({ onNewNote, onHistory, onSettings }: Props) {
+export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot }: Props) {
+  const t = useT();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("nodesk");
@@ -47,12 +51,22 @@ export default function Widget({ onNewNote, onHistory, onSettings }: Props) {
     const trimmed = text.trim();
     if (!trimmed) {
       const dbg = liveRef.current?.getDebug?.() ?? "";
-      flashLabel(`boş · ${dbg}`, 6000);
+      flashLabel(`${t("empty")} · ${dbg}`, 6000);
       return;
     }
     if (trimmed.startsWith("[HATA]")) {
       flashLabel(trimmed.slice(0, 60), 6000);
       return;
+    }
+    // AI ile duzelt
+    let processed = trimmed;
+    try {
+      setLabel(t("aiFixing"));
+      const fixed = await aiFixText(trimmed, "fix");
+      const clean = fixed.trim();
+      if (clean && !clean.startsWith("[HATA]")) processed = clean;
+    } catch {
+      // AI basarisizsa ham metni kaydet
     }
     const now = new Date();
     const title = `Sesli not · ${now.toLocaleString("tr-TR", {
@@ -61,12 +75,12 @@ export default function Widget({ onNewNote, onHistory, onSettings }: Props) {
       hour: "2-digit",
       minute: "2-digit",
     })}`;
-    const html = trimmed
+    const html = processed
       .split(/\n+/)
       .map((l) => `<p>${l.trim()}</p>`)
       .join("");
     await saveNote(null, title, html);
-    flashLabel("✓ kaydedildi");
+    flashLabel(t("saved"));
   };
 
   const partialRef = useRef<string>("");
@@ -117,7 +131,7 @@ export default function Widget({ onNewNote, onHistory, onSettings }: Props) {
     liveRef.current = null;
     setRecording(false);
     setBusy(true);
-    setLabel("🔄 işleniyor…");
+    setLabel(t("processing"));
     try {
       const text = await session.stop();
       await saveTranscript(text);
@@ -171,42 +185,53 @@ export default function Widget({ onNewNote, onHistory, onSettings }: Props) {
           <span className="label">{label}</span>
         </div>
         <button
-          title={recording ? "Kaydı bitir ve çevir" : "Sesli not kaydet"}
+          title={recording ? t("voice.stop") : t("voice.record")}
           onClick={toggleVoice}
           disabled={busy}
           className={recording ? "mic-recording" : ""}
         >
-          <Mic size={16} />
+          {recording ? <Square size={14} /> : <Mic size={16} />}
         </button>
-        <button
-          title="Geçmiş notlar"
-          onClick={onHistory}
-          disabled={recording || busy}
-        >
-          <HistoryIcon size={16} />
-        </button>
-        <button
-          className="primary"
-          title="Yeni not"
-          onClick={onNewNote}
-          disabled={recording || busy}
-        >
-          <Pencil size={16} />
-        </button>
-        <button
-          title="Ayarlar"
-          onClick={onSettings}
-          disabled={recording || busy}
-        >
-          <SettingsIcon size={16} />
-        </button>
-        <button
-          title="Tray'e gizle"
-          onClick={() => hideToTray()}
-          disabled={recording || busy}
-        >
-          <X size={16} />
-        </button>
+        {!recording && (
+          <>
+            <button
+              title={t("history")}
+              onClick={onHistory}
+              disabled={busy}
+            >
+              <HistoryIcon size={16} />
+            </button>
+            <button
+              title={t("takeScreenshot")}
+              onClick={onScreenshot}
+              disabled={busy}
+            >
+              <Camera size={16} />
+            </button>
+            <button
+              className="primary"
+              title={t("newNote")}
+              onClick={onNewNote}
+              disabled={busy}
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              title={t("settings")}
+              onClick={onSettings}
+              disabled={busy}
+            >
+              <SettingsIcon size={16} />
+            </button>
+            <button
+              title={t("hideToTray")}
+              onClick={() => hideToTray()}
+              disabled={busy}
+            >
+              <X size={16} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

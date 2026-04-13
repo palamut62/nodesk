@@ -1,5 +1,7 @@
 mod db;
+mod ollama;
 mod openrouter;
+mod screenshot;
 mod settings;
 mod whisper;
 
@@ -66,6 +68,9 @@ pub struct SaveSettingsPayload {
     pub openrouter_api_key: Option<String>,
     pub openrouter_model: Option<String>,
     pub autostart: Option<bool>,
+    pub ai_provider: Option<String>,
+    pub ollama_base_url: Option<String>,
+    pub ollama_model: Option<String>,
 }
 
 #[tauri::command]
@@ -88,6 +93,21 @@ fn save_settings(
             cur.openrouter_model = m;
         }
     }
+    if let Some(p) = payload.ai_provider {
+        if !p.is_empty() {
+            cur.ai_provider = p;
+        }
+    }
+    if let Some(u) = payload.ollama_base_url {
+        if !u.is_empty() {
+            cur.ollama_base_url = u;
+        }
+    }
+    if let Some(m) = payload.ollama_model {
+        if !m.is_empty() {
+            cur.ollama_model = m;
+        }
+    }
     if let Some(a) = payload.autostart {
         cur.autostart = a;
         let manager = app.autolaunch();
@@ -102,10 +122,16 @@ fn save_settings(
 
 #[tauri::command]
 async fn list_models(store: State<'_, SettingsStore>) -> Result<Vec<ModelInfo>, String> {
-    let key = store.get().openrouter_api_key;
-    settings::list_openrouter_models(&key)
-        .await
-        .map_err(|e| e.to_string())
+    let s = store.get();
+    if s.ai_provider == "ollama" {
+        ollama::list_models(&s.ollama_base_url)
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        settings::list_openrouter_models(&s.openrouter_api_key)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -144,9 +170,15 @@ async fn ai_fix_text(
 ) -> Result<String, String> {
     let mode = payload.mode.as_deref().unwrap_or("fix");
     let s = store.get();
-    openrouter::fix_text(&payload.text, mode, &s.openrouter_api_key, &s.openrouter_model)
-        .await
-        .map_err(|e| e.to_string())
+    if s.ai_provider == "ollama" {
+        ollama::fix_text(&payload.text, mode, &s.ollama_base_url, &s.ollama_model)
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        openrouter::fix_text(&payload.text, mode, &s.openrouter_api_key, &s.openrouter_model)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -155,6 +187,26 @@ async fn transcribe_audio(payload: TranscribePayload) -> Result<String, String> 
     whisper::transcribe(payload.audio, mime)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, data).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn capture_screen(_window: WebviewWindow) -> Result<String, String> {
+    screenshot::capture_screen().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -194,6 +246,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             None,
@@ -238,9 +291,13 @@ pub fn run() {
             delete_note,
             ai_fix_text,
             transcribe_audio,
+            read_text_file,
+            write_text_file,
             start_drag,
             quit_app,
-            hide_to_tray
+            hide_to_tray,
+            capture_screen,
+            write_binary_file
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

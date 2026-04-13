@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import Widget from "./Widget";
 import Editor from "./Editor";
 import History from "./History";
 import Settings from "./Settings";
+import ScreenshotEditor from "./ScreenshotEditor";
 import { DialogHost } from "./components/Dialog";
 import {
+  captureScreen,
   focusWindow,
   getNote,
   setAlwaysOnTop,
@@ -27,6 +30,7 @@ function App() {
   const [phase, setPhase] = useState<Phase>("in");
   const [frame, setFrame] = useState(VIEW_SIZES.pill);
   const [noteToLoad, setNoteToLoad] = useState<Note | null>(null);
+  const [screenshotData, setScreenshotData] = useState<string | null>(null);
   const busyRef = useRef(false);
 
   const morphTo = useCallback(
@@ -61,6 +65,29 @@ function App() {
           }
         } else {
           setNoteToLoad(null);
+        }
+      }
+
+      if (target === "screenshot") {
+        try {
+          const win = getCurrentWindow();
+          await win.hide();
+          await new Promise((r) => setTimeout(r, 250));
+          let data: string;
+          try {
+            data = await captureScreen();
+          } finally {
+            await win.show();
+          }
+          if (!data) throw new Error("empty screenshot data");
+          setScreenshotData(data);
+        } catch (err) {
+          console.error("[screenshot] capture failed:", err);
+          alert("Ekran alıntısı alınamadı: " + String(err));
+          setScreenshotData(null);
+          busyRef.current = false;
+          morphTo("pill");
+          return;
         }
       }
 
@@ -104,6 +131,7 @@ function App() {
             onNewNote={() => morphTo("editor")}
             onHistory={() => morphTo("history")}
             onSettings={() => morphTo("settings")}
+            onScreenshot={() => morphTo("screenshot")}
           />
         )}
         {view === "editor" && (
@@ -121,6 +149,12 @@ function App() {
         )}
         {view === "settings" && (
           <Settings onClose={() => morphTo("pill")} />
+        )}
+        {view === "screenshot" && screenshotData && (
+          <ScreenshotEditor
+            imageBase64={screenshotData}
+            onClose={() => morphTo("pill")}
+          />
         )}
       </div>
     </div>
