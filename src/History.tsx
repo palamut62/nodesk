@@ -4,7 +4,16 @@ import { confirmDialog } from "./components/Dialog";
 import ErrorBubble from "./components/ErrorBubble";
 import { sanitizeAiHtml } from "./lib/aiHtml";
 import { useT } from "./lib/i18n";
-import { aiFixText, deleteNote, getNote, listNotes, saveNote, type Note } from "./lib/tauri";
+import {
+  aiFixText,
+  deleteNote,
+  getNote,
+  listNotes,
+  parseTags,
+  saveNote,
+  tagPastelColor,
+  type Note,
+} from "./lib/tauri";
 
 function stripHtml(html: string): string {
   const div = document.createElement("div");
@@ -55,6 +64,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
   const t = useT();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState("");
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiBusyId, setAiBusyId] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -84,12 +94,19 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
     return () => window.removeEventListener("keydown", esc);
   }, [onClose, refresh]);
 
+  const allTags = Array.from(
+    new Set(notes.flatMap((n) => parseTags(n.tags ?? ""))),
+  ).sort();
+
   const filtered = notes.filter((note) => {
+    const tags = parseTags(note.tags ?? "");
+    if (activeTag && !tags.includes(activeTag)) return false;
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     return (
       note.title.toLowerCase().includes(q) ||
-      stripHtml(note.content).toLowerCase().includes(q)
+      stripHtml(note.content).toLowerCase().includes(q) ||
+      tags.some((tg) => tg.toLowerCase().includes(q))
     );
   });
 
@@ -172,6 +189,31 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
           />
         </div>
 
+        {allTags.length > 0 && (
+          <div className="history-tag-filter">
+            <button
+              className={`tag-filter-chip ${activeTag == null ? "active" : ""}`}
+              onClick={() => setActiveTag(null)}
+            >
+              tümü
+            </button>
+            {allTags.map((tag) => {
+              const c = tagPastelColor(tag);
+              const active = activeTag === tag;
+              return (
+                <button
+                  key={tag}
+                  className={`tag-filter-chip ${active ? "active" : ""}`}
+                  style={{ background: c.bg, color: c.fg }}
+                  onClick={() => setActiveTag(active ? null : tag)}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="history-list">
           {loading && <div className="history-empty">{t("loading")}</div>}
 
@@ -201,6 +243,27 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
                   </div>
 
                   {preview && <div className="history-item-preview">{preview}</div>}
+
+                  {(() => {
+                    const tags = parseTags(note.tags ?? "");
+                    if (tags.length === 0) return null;
+                    return (
+                      <div className="history-item-tags">
+                        {tags.map((tag) => {
+                          const c = tagPastelColor(tag);
+                          return (
+                            <span
+                              key={tag}
+                              className="tag-chip small"
+                              style={{ background: c.bg, color: c.fg }}
+                            >
+                              {tag}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   <div className="history-item-date">{formatShortDate(note.updated_at)}</div>
                 </div>
@@ -259,6 +322,31 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
               </div>
             );
           })}
+        </div>
+
+        <div className="social-links">
+          <a
+            href="https://github.com/umutins62/nodesk"
+            target="_blank"
+            rel="noreferrer"
+            title="GitHub"
+            aria-label="GitHub"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.807 1.304 3.492.997.108-.776.42-1.305.763-1.605-2.665-.305-5.467-1.332-5.467-5.93 0-1.31.468-2.38 1.235-3.22-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23A11.5 11.5 0 0 1 12 6.8c1.02.005 2.047.138 3.006.404 2.29-1.552 3.296-1.23 3.296-1.23.654 1.652.243 2.873.12 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.62-5.48 5.92.43.37.815 1.102.815 2.222 0 1.606-.015 2.9-.015 3.293 0 .32.216.694.825.576C20.565 22.296 24 17.8 24 12.5 24 5.87 18.627.5 12 .5Z" />
+            </svg>
+          </a>
+          <a
+            href="https://x.com/umutins62"
+            target="_blank"
+            rel="noreferrer"
+            title="X"
+            aria-label="X"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M18.244 2H21l-6.52 7.45L22 22h-6.828l-4.77-6.24L4.8 22H2.044l6.974-7.97L2 2h6.914l4.314 5.71L18.244 2Zm-1.196 18h1.63L7.03 4H5.29l11.758 16Z" />
+            </svg>
+          </a>
         </div>
       </div>
     </div>

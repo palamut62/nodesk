@@ -412,6 +412,137 @@ button {
 
 .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 
+.btn.icon-only {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.social-links {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 0 6px;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.social-links:hover { opacity: 1; }
+.social-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.social-links a:hover {
+  background: rgba(42, 38, 32, 0.08);
+  color: var(--ink);
+}
+
+/* ===================== TAGS ===================== */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.tag-chip.small {
+  padding: 1px 7px;
+  font-size: 10px;
+}
+
+.editor-tags-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 20px 8px;
+}
+.editor-tags-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--ink-soft);
+  outline: none;
+  padding: 2px 0;
+}
+.editor-tags-input::placeholder { color: var(--ink-soft); opacity: 0.5; }
+.editor-tags-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 14px 8px;
+}
+.tag-filter-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: rgba(42, 38, 32, 0.06);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tag-filter-chip:hover { filter: brightness(0.95); }
+.tag-filter-chip.active {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 1px;
+}
+
+.history-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* ===================== REGION PICK OVERLAY ===================== */
+.region-pick-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  cursor: crosshair;
+  user-select: none;
+  z-index: 9999;
+}
+.region-pick-hint {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.85);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.region-pick-rect {
+  position: absolute;
+  border: 2px dashed #fff;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
 .spin { animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

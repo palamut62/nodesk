@@ -8,7 +8,7 @@ import {
   startLiveWhisper,
   type LiveWhisperSession,
 } from "./lib/tauri";
-import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera } from "lucide-react";
+import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video } from "lucide-react";
 import { useT } from "./lib/i18n";
 
 interface Props {
@@ -16,9 +16,10 @@ interface Props {
   onHistory: () => void;
   onSettings: () => void;
   onScreenshot: () => void;
+  onRecord: () => void;
 }
 
-export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot }: Props) {
+export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot, onRecord }: Props) {
   const t = useT();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -207,6 +208,13 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot 
               disabled={busy}
             >
               <Camera size={16} />
+            </button>
+            <button
+              title="GIF kaydı"
+              onClick={onRecord}
+              disabled={busy}
+            >
+              <Video size={16} />
             </button>
             <button
               className="primary"

@@ -1,6 +1,7 @@
 mod db;
 mod ollama;
 mod openrouter;
+mod recorder;
 mod screenshot;
 mod settings;
 mod whisper;
@@ -21,6 +22,8 @@ pub struct SaveNotePayload {
     pub id: Option<i64>,
     pub title: String,
     pub content: String,
+    #[serde(default)]
+    pub tags: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -138,12 +141,12 @@ async fn list_models(store: State<'_, SettingsStore>) -> Result<Vec<ModelInfo>, 
 fn save_note(db: State<Db>, payload: SaveNotePayload) -> Result<i64, String> {
     match payload.id {
         Some(id) => {
-            db.update(id, &payload.title, &payload.content)
+            db.update(id, &payload.title, &payload.content, &payload.tags)
                 .map_err(|e| e.to_string())?;
             Ok(id)
         }
         None => db
-            .insert(&payload.title, &payload.content)
+            .insert(&payload.title, &payload.content, &payload.tags)
             .map_err(|e| e.to_string()),
     }
 }
@@ -207,6 +210,80 @@ fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
 #[tauri::command]
 fn capture_screen(_window: WebviewWindow) -> Result<String, String> {
     screenshot::capture_screen().map_err(|e| e.to_string())
+}
+
+use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::atomic::AtomicBool;
+pub struct RecorderState(pub StdMutex<Option<Arc<AtomicBool>>>);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecordGifPayload {
+    pub output_path: String,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub w: Option<u32>,
+    pub h: Option<u32>,
+    pub fps: Option<u32>,
+    pub max_seconds: Option<u64>,
+    pub blur_outside: Option<bool>,
+}
+
+#[tauri::command]
+async fn record_gif(
+    state: State<'_, RecorderState>,
+    payload: RecordGifPayload,
+) -> Result<(), String> {
+    let flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut slot = state.0.lock().map_err(|_| "recorder lock")?;
+        if slot.is_some() {
+            return Err("Zaten bir kayıt sürüyor".into());
+        }
+        *slot = Some(flag.clone());
+    }
+    let region = match (payload.x, payload.y, payload.w, payload.h) {
+        (Some(x), Some(y), Some(w), Some(h)) if w > 0 && h > 0 => {
+            Some(recorder::Region { x, y, w, h })
+        }
+        _ => None,
+    };
+    let fps = payload.fps.unwrap_or(12);
+    let max_seconds = payload.max_seconds.unwrap_or(300);
+    let blur_outside = payload.blur_outside.unwrap_or(false);
+    let output_path = payload.output_path.clone();
+    let flag_for_task = flag.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        recorder::record_gif_with_flag(
+            &output_path,
+            region,
+            fps,
+            max_seconds,
+            blur_outside,
+            flag_for_task,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Ok(mut slot) = state.0.lock() {
+        *slot = None;
+    }
+
+    result.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn stop_recording(state: State<'_, RecorderState>) -> Result<(), String> {
+    let slot = state.0.lock().map_err(|_| "recorder lock")?;
+    match slot.as_ref() {
+        Some(f) => {
+            f.store(true, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("[recorder] stop flag set");
+        }
+        None => eprintln!("[recorder] stop called but no active recording"),
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -297,7 +374,9 @@ pub fn run() {
             quit_app,
             hide_to_tray,
             capture_screen,
-            write_binary_file
+            write_binary_file,
+            record_gif,
+            stop_recording
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -309,6 +388,8 @@ pub fn run() {
             let settings_path = data_dir.join("settings.json");
             let store = SettingsStore::load(settings_path);
             app.manage(store);
+
+            app.manage(RecorderState(StdMutex::new(None)));
 
             // Tray icon + menü
             let show_item = MenuItem::with_id(app, "show", "Göster / Gizle", true, None::<&str>)?;

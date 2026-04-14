@@ -41,9 +41,11 @@ import { mdToHtml, htmlToMd, txtToHtml, htmlToTxt } from "./lib/fileFormat";
 import {
   aiFixText,
   deleteNote,
+  parseTags,
   readTextFile,
   saveNote,
   startLiveWhisper,
+  tagPastelColor,
   writeTextFile,
   type LiveWhisperSession,
   type Note,
@@ -66,6 +68,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
   const t = useT();
   const [currentId, setCurrentId] = useState<number | null>(noteToLoad?.id ?? null);
   const [title, setTitle] = useState(noteToLoad?.title ?? "");
+  const [tagsInput, setTagsInput] = useState(noteToLoad?.tags ?? "");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -98,6 +101,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     if (!editor) return;
     setCurrentId(noteToLoad?.id ?? null);
     setTitle(noteToLoad?.title ?? "");
+    setTagsInput(noteToLoad?.tags ?? "");
     editor.commands.setContent(noteToLoad?.content ?? "");
     setStatus("");
     setError("");
@@ -152,7 +156,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
 
     if (!resolvedTitle.trim() && !plain) return currentId;
 
-    const savedId = await saveNote(currentId, resolvedTitle, html);
+    const savedId = await saveNote(currentId, resolvedTitle, html, tagsInput);
     if (currentId == null) {
       setCurrentId(savedId);
     }
@@ -305,7 +309,7 @@ export default function Editor({ noteToLoad, onClose }: Props) {
     setStatus(currentId ? t("updating") : t("saving"));
 
     try {
-      const savedId = await saveNote(currentId, title, html);
+      const savedId = await saveNote(currentId, title, html, tagsInput);
       if (currentId == null) {
         setCurrentId(savedId);
       }
@@ -530,6 +534,29 @@ export default function Editor({ noteToLoad, onClose }: Props) {
           onChange={(e) => setTitle(e.target.value)}
         />
 
+        <div className="editor-tags-row">
+          <input
+            className="editor-tags-input"
+            placeholder="etiketler (virgülle ayır)"
+            value={tagsInput}
+            onChange={(e) => setTagsInput(e.target.value)}
+          />
+          <div className="editor-tags-preview">
+            {parseTags(tagsInput).map((tag) => {
+              const c = tagPastelColor(tag);
+              return (
+                <span
+                  key={tag}
+                  className="tag-chip"
+                  style={{ background: c.bg, color: c.fg }}
+                >
+                  {tag}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="editor-body">
           <EditorContent editor={editor} />
         </div>
@@ -538,13 +565,19 @@ export default function Editor({ noteToLoad, onClose }: Props) {
           <div className="status">{status || t("statusHint")}</div>
 
           {currentId != null && (
-            <button className="btn danger" onClick={() => void handleDelete()} disabled={busy}>
-              <Trash2 size={14} /> {t("delete")}
+            <button
+              className="btn danger icon-only"
+              onClick={() => void handleDelete()}
+              disabled={busy}
+              title={t("delete")}
+              aria-label={t("delete")}
+            >
+              <Trash2 size={14} />
             </button>
           )}
 
           <button
-            className="btn ghost"
+            className="btn ghost icon-only"
             onClick={() => {
               const text = editor.getText();
               if (!text.trim()) {
@@ -558,17 +591,30 @@ export default function Editor({ noteToLoad, onClose }: Props) {
               });
             }}
             disabled={busy}
-            title="Notu kopyala"
+            title={t("copy")}
+            aria-label={t("copy")}
           >
-            <Copy size={14} /> {t("copy")}
+            <Copy size={14} />
           </button>
 
-          <button className="btn ghost" onClick={() => void handleOpenFile()} disabled={busy}>
-            <FolderOpen size={14} /> {t("open")}
+          <button
+            className="btn ghost icon-only"
+            onClick={() => void handleOpenFile()}
+            disabled={busy}
+            title={t("open")}
+            aria-label={t("open")}
+          >
+            <FolderOpen size={14} />
           </button>
 
-          <button className="btn ghost" onClick={() => void handleExportFile()} disabled={busy}>
-            <FileDown size={14} /> {t("export")}
+          <button
+            className="btn ghost icon-only"
+            onClick={() => void handleExportFile()}
+            disabled={busy}
+            title={t("export")}
+            aria-label={t("export")}
+          >
+            <FileDown size={14} />
           </button>
 
           <button className="btn ghost" onClick={onClose} disabled={busy}>

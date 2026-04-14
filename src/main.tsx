@@ -7,6 +7,7 @@ import Editor from "./Editor";
 import History from "./History";
 import Settings from "./Settings";
 import ScreenshotEditor from "./ScreenshotEditor";
+import Recorder from "./Recorder";
 import { DialogHost } from "./components/Dialog";
 import {
   captureScreen,
@@ -137,6 +138,7 @@ function App() {
             onHistory={() => morphTo("history")}
             onSettings={() => morphTo("settings")}
             onScreenshot={() => morphTo("screenshot")}
+            onRecord={() => morphTo("recorder")}
           />
         )}
         {view === "editor" && (
@@ -154,6 +156,9 @@ function App() {
         )}
         {view === "settings" && (
           <Settings onClose={() => morphTo("pill")} />
+        )}
+        {view === "recorder" && (
+          <Recorder onClose={() => morphTo("pill")} />
         )}
         {view === "screenshot" && screenshotData && (
           <ScreenshotEditor

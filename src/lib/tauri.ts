@@ -15,6 +15,7 @@ export interface Note {
   id: number;
   title: string;
   content: string;
+  tags: string;
   created_at: number;
   updated_at: number;
 }
@@ -50,12 +51,51 @@ export const listModels = () => invoke<ModelInfo[]>("list_models");
 
 export const hideToTray = () => invoke<void>("hide_to_tray");
 
-export const saveNote = (id: number | null, title: string, content: string) =>
-  invoke<number>("save_note", { payload: { id, title, content } });
+export const saveNote = (
+  id: number | null,
+  title: string,
+  content: string,
+  tags: string = "",
+) => invoke<number>("save_note", { payload: { id, title, content, tags } });
+
+export const parseTags = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+
+export const serializeTags = (tags: string[]): string =>
+  tags.map((t) => t.trim()).filter(Boolean).join(", ");
+
+export const tagPastelColor = (tag: string): { bg: string; fg: string } => {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) >>> 0;
+  const hue = hash % 360;
+  return {
+    bg: `hsl(${hue}, 70%, 88%)`,
+    fg: `hsl(${hue}, 45%, 28%)`,
+  };
+};
 
 export const listNotes = () => invoke<Note[]>("list_notes");
 export const getNote = (id: number) => invoke<Note>("get_note", { id });
 export const deleteNote = (id: number) => invoke<void>("delete_note", { id });
+
+export interface RecordGifPayload {
+  output_path: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  fps?: number;
+  max_seconds?: number;
+  blur_outside?: boolean;
+}
+
+export const recordGif = (payload: RecordGifPayload) =>
+  invoke<void>("record_gif", { payload });
+
+export const stopRecording = () => invoke<void>("stop_recording");
 
 export const aiFixText = (
   text: string,
@@ -400,14 +440,15 @@ export const quitApp = () => invoke<void>("quit_app");
 
 export const captureScreen = () => invoke<string>("capture_screen");
 
-export type ViewKind = "pill" | "editor" | "history" | "settings" | "screenshot";
+export type ViewKind = "pill" | "editor" | "history" | "settings" | "screenshot" | "recorder";
 
 export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
-  pill: { w: 360, h: 56 },
+  pill: { w: 410, h: 56 },
   editor: { w: 700, h: 600 },
   history: { w: 460, h: 600 },
   settings: { w: 460, h: 520 },
   screenshot: { w: 900, h: 700 },
+  recorder: { w: 460, h: 560 },
 };
 
 export async function setAlwaysOnTop(value: boolean) {
