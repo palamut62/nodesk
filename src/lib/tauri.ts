@@ -25,6 +25,7 @@ export const getConfig = () => invoke<AppConfig>("get_config");
 export interface Settings {
   openrouter_api_key: string;
   openrouter_model: string;
+  groq_api_key: string;
   autostart: boolean;
   ai_provider: string;
   ollama_base_url: string;
@@ -41,6 +42,7 @@ export const getSettings = () => invoke<Settings>("get_settings");
 export const saveSettings = (payload: {
   openrouter_api_key?: string;
   openrouter_model?: string;
+  groq_api_key?: string;
   autostart?: boolean;
   ai_provider?: string;
   ollama_base_url?: string;
@@ -81,7 +83,7 @@ export const listNotes = () => invoke<Note[]>("list_notes");
 export const getNote = (id: number) => invoke<Note>("get_note", { id });
 export const deleteNote = (id: number) => invoke<void>("delete_note", { id });
 
-export interface RecordGifPayload {
+export interface RecordMp4Payload {
   output_path: string;
   x?: number;
   y?: number;
@@ -89,13 +91,34 @@ export interface RecordGifPayload {
   h?: number;
   fps?: number;
   max_seconds?: number;
-  blur_outside?: boolean;
+  speed?: number;
+  lossless?: boolean;
 }
 
-export const recordGif = (payload: RecordGifPayload) =>
-  invoke<void>("record_gif", { payload });
+export const checkFfmpeg = () => invoke<boolean>("check_ffmpeg");
+
+export const startRecording = (payload: RecordMp4Payload) =>
+  invoke<void>("start_recording", { payload });
 
 export const stopRecording = () => invoke<void>("stop_recording");
+
+export interface ExportGifPayload {
+  input_path: string;
+  output_path: string;
+  fps?: number;
+  width?: number;
+  speed?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
+export const exportGif = (payload: ExportGifPayload) =>
+  invoke<void>("export_gif", { payload });
+
+export const deleteFile = (path: string) =>
+  invoke<void>("delete_file", { path });
 
 export const aiFixText = (
   text: string,
@@ -432,6 +455,8 @@ export const readTextFile = (path: string) =>
   invoke<string>("read_text_file", { path });
 export const writeTextFile = (path: string, content: string) =>
   invoke<void>("write_text_file", { path, content });
+export const writeBinaryFile = (path: string, data: number[]) =>
+  invoke<void>("write_binary_file", { path, data });
 
 export const startDrag = () => invoke<void>("start_drag");
 export const quitApp = () => invoke<void>("quit_app");
@@ -448,7 +473,7 @@ export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
   history: { w: 460, h: 600 },
   settings: { w: 460, h: 520 },
   screenshot: { w: 900, h: 700 },
-  recorder: { w: 460, h: 560 },
+  recorder: { w: 520, h: 640 },
 };
 
 export async function setAlwaysOnTop(value: boolean) {

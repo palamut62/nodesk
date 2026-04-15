@@ -1,12 +1,7 @@
 use anyhow::{anyhow, Result};
-use image::{imageops, RgbaImage};
-use std::fs::File;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use xcap::Monitor;
-
-const MAX_DURATION_SECS: u64 = 300; // 5 dakika
+use std::io::Write;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Region {
@@ -16,129 +11,207 @@ pub struct Region {
     pub h: u32,
 }
 
-fn primary_monitor() -> Result<Monitor> {
-    let monitors = Monitor::all()?;
-    monitors
-        .into_iter()
-        .find(|m| m.is_primary())
-        .or_else(|| Monitor::all().ok()?.into_iter().next())
-        .ok_or_else(|| anyhow!("No monitor found"))
-}
+pub struct FfmpegState(pub Mutex<Option<Child>>);
 
-fn process_frame(
-    frame: RgbaImage,
-    region: Option<Region>,
-    blur_outside: bool,
-    max_width: u32,
-) -> RgbaImage {
-    let (fw, fh) = frame.dimensions();
-    let processed = if let Some(r) = region {
-        if blur_outside {
-            // Blur full frame, overlay sharp region on top
-            let mut blurred = imageops::blur(&frame, 8.0);
-            let rx = r.x.max(0) as u32;
-            let ry = r.y.max(0) as u32;
-            let rw = r.w.min(fw.saturating_sub(rx));
-            let rh = r.h.min(fh.saturating_sub(ry));
-            if rw > 0 && rh > 0 {
-                let sharp = imageops::crop_imm(&frame, rx, ry, rw, rh).to_image();
-                imageops::overlay(&mut blurred, &sharp, rx as i64, ry as i64);
-            }
-            blurred
-        } else {
-            let rx = r.x.max(0) as u32;
-            let ry = r.y.max(0) as u32;
-            let rw = r.w.min(fw.saturating_sub(rx));
-            let rh = r.h.min(fh.saturating_sub(ry));
-            imageops::crop_imm(&frame, rx, ry, rw.max(1), rh.max(1)).to_image()
-        }
-    } else {
-        frame
-    };
-
-    let (pw, ph) = processed.dimensions();
-    if pw > max_width {
-        let new_h = (ph as f32 * max_width as f32 / pw as f32) as u32;
-        imageops::resize(&processed, max_width, new_h.max(1), imageops::FilterType::Triangle)
-    } else {
-        processed
+impl FfmpegState {
+    pub fn new() -> Self {
+        Self(Mutex::new(None))
     }
 }
 
-pub fn record_gif_with_flag(
+pub fn check_ffmpeg() -> bool {
+    Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+pub fn start_mp4(
     output_path: &str,
     region: Option<Region>,
     fps: u32,
     max_seconds: u64,
-    blur_outside: bool,
-    stop: Arc<AtomicBool>,
-) -> Result<()> {
-    let fps = fps.clamp(1, 30);
-    let duration = Duration::from_secs(max_seconds.min(MAX_DURATION_SECS));
-    let frame_interval = Duration::from_millis(1000 / fps as u64);
+    speed: f32,
+    lossless: bool,
+) -> Result<Child> {
+    let fps = fps.clamp(5, 60);
+    let speed = speed.clamp(0.25, 4.0);
 
-    let monitor = primary_monitor()?;
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args([
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-f",
+        "gdigrab",
+        "-framerate",
+        &fps.to_string(),
+        "-i",
+        "desktop",
+        "-t",
+        &max_seconds.to_string(),
+    ]);
 
-    // Prime one frame to determine output dims
-    let first_raw: RgbaImage = monitor.capture_image()?.into();
-    let first = process_frame(first_raw, region, blur_outside, 800);
-    let (ow, oh) = first.dimensions();
+    if let Some(r) = region {
+        let x = r.x.max(0);
+        let y = r.y.max(0);
+        let w = r.w.max(2);
+        let h = r.h.max(2);
 
-    let file = File::create(output_path)?;
-    let mut encoder = gif::Encoder::new(file, ow as u16, oh as u16, &[])?;
-    encoder.set_repeat(gif::Repeat::Infinite)?;
+        let crop_w = format!("min(iw-{x}\\,{w})");
+        let crop_h = format!("min(ih-{y}\\,{h})");
+        let mut filter_graph = format!(
+            "[0:v]split=2[orig][blur];[blur]boxblur=18:2[bg];[orig]crop={crop_w}:{crop_h}:{x}:{y}[fg];[bg][fg]overlay={x}:{y}[mix]"
+        );
+        let mut map_label = "[mix]".to_string();
 
-    write_gif_frame(&mut encoder, &first, fps)?;
-
-    let start = Instant::now();
-    let mut next_tick = Instant::now() + frame_interval;
-
-    while start.elapsed() < duration && !stop.load(Ordering::SeqCst) {
-        let now = Instant::now();
-        if now < next_tick {
-            let wait = next_tick - now;
-            // sleep in small slices so stop flag is picked up quickly
-            let mut remaining = wait;
-            let slice = Duration::from_millis(20);
-            while remaining > Duration::ZERO && !stop.load(Ordering::SeqCst) {
-                let s = remaining.min(slice);
-                std::thread::sleep(s);
-                remaining = remaining.saturating_sub(s);
-            }
-            if stop.load(Ordering::SeqCst) { break; }
+        if (speed - 1.0).abs() > f32::EPSILON {
+            filter_graph.push_str(&format!(";[mix]setpts=PTS/{:.4}[out]", speed));
+            map_label = "[out]".to_string();
         }
-        next_tick += frame_interval;
 
-        let raw: RgbaImage = match monitor.capture_image() {
-            Ok(img) => img.into(),
-            Err(_) => continue,
-        };
-        if stop.load(Ordering::SeqCst) { break; }
-        let frame = process_frame(raw, region, blur_outside, 800);
-        // Resize to encoder dims if different
-        let frame = if frame.dimensions() != (ow, oh) {
-            imageops::resize(&frame, ow, oh, imageops::FilterType::Triangle)
-        } else {
-            frame
-        };
-        if let Err(e) = write_gif_frame(&mut encoder, &frame, fps) {
-            eprintln!("gif frame error: {e}");
-            break;
+        cmd.args(["-filter_complex", &filter_graph, "-map", &map_label]);
+    } else if (speed - 1.0).abs() > f32::EPSILON {
+        let vf = format!("setpts=PTS/{:.4}", speed);
+        cmd.args(["-vf", &vf]);
+    }
+
+    if lossless {
+        // GIF'e donusum icin ara kaydi kayipsiz tut; cursor kenarlari bulaniklasmasin.
+        cmd.args([
+            "-c:v",
+            "ffv1",
+            "-level",
+            "3",
+            "-g",
+            "1",
+            "-pix_fmt",
+            "bgr0",
+            output_path,
+        ]);
+    } else {
+        cmd.args([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+frag_keyframe+empty_moov+default_base_moof",
+            output_path,
+        ]);
+    }
+
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::null());
+
+    cmd.spawn()
+        .map_err(|e| anyhow!("ffmpeg baslatilamadi: {e}"))
+}
+
+pub fn graceful_stop(child: &mut Child) -> Result<()> {
+    // stdin'i take() ile al ve drop et -> ffmpeg EOF gorur, moov atomunu yazar.
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(b"q\n");
+        let _ = stdin.flush();
+        drop(stdin);
+    }
+
+    // 3 saniyeye kadar graceful cikis bekle
+    for _ in 0..30 {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(_) => break,
         }
     }
 
+    // Zorla sonlandir
+    let _ = child.kill();
+
+    // Kill sonrasi max 1 sn bekle, cid'i polle; sonsuz bloklanma yok.
+    for _ in 0..20 {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(_) => return Ok(()),
+        }
+    }
+
+    // Son care: sistem komutuyla oldur (handle kopuksa bile)
+    let pid = child.id();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
     Ok(())
 }
 
-fn write_gif_frame<W: std::io::Write>(
-    encoder: &mut gif::Encoder<W>,
-    rgba: &RgbaImage,
+pub fn mp4_to_gif(
+    input: &str,
+    output: &str,
     fps: u32,
+    max_width: u32,
+    speed: f32,
+    region: Option<Region>,
 ) -> Result<()> {
-    let (w, h) = rgba.dimensions();
-    let mut pixels = rgba.as_raw().clone();
-    let mut gframe = gif::Frame::from_rgba_speed(w as u16, h as u16, &mut pixels, 10);
-    gframe.delay = (100 / fps as u16).max(1);
-    encoder.write_frame(&gframe)?;
+    let fps = fps.clamp(5, 24);
+    let speed = speed.clamp(0.25, 4.0);
+
+    let mut chain_parts: Vec<String> = Vec::new();
+    if (speed - 1.0).abs() > f32::EPSILON {
+        chain_parts.push(format!("setpts=PTS/{:.4}", speed));
+    }
+    chain_parts.push(format!("fps={fps}"));
+    chain_parts.push("setsar=1".to_string());
+    if max_width >= 2 {
+        chain_parts.push(format!("scale={max_width}:-1:flags=lanczos"));
+    }
+    let chain = chain_parts.join(",");
+
+    let vf = if let Some(r) = region {
+        let x = r.x.max(0);
+        let y = r.y.max(0);
+        let w = r.w.max(2);
+        let h = r.h.max(2);
+        let crop_w = format!("min(iw-{x}\\,{w})");
+        let crop_h = format!("min(ih-{y}\\,{h})");
+        format!(
+            "{chain},split=2[all][pal];[pal]crop={crop_w}:{crop_h}:{x}:{y},palettegen=max_colors=256:stats_mode=full[p];[all][p]paletteuse=dither=none"
+        )
+    } else {
+        format!(
+            "{chain},split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=full[p];[s1][p]paletteuse=dither=none"
+        )
+    };
+
+    let status = Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            input,
+            "-vf",
+            &vf,
+            "-loop",
+            "0",
+            output,
+        ])
+        .status()
+        .map_err(|e| anyhow!("ffmpeg calistirilamadi: {e}"))?;
+
+    if !status.success() {
+        return Err(anyhow!("ffmpeg GIF donusumu basarisiz"));
+    }
+
     Ok(())
 }

@@ -5,7 +5,9 @@ const OPENROUTER_API: &str = "https://openrouter.ai/api/v1/chat/completions";
 
 pub async fn fix_text(text: &str, mode: &str, key: &str, model: &str) -> Result<String> {
     if key.is_empty() {
-        return Err(anyhow!("OpenRouter API key tanımlı değil (Ayarlar'dan gir)"));
+        return Err(anyhow!(
+            "OpenRouter API key tanımlı değil (Ayarlar'dan gir)"
+        ));
     }
 
     let system = match mode {

@@ -36,7 +36,10 @@ impl Db {
             [],
         )?;
         // Migration: add tags column if missing on pre-existing databases
-        let _ = conn.execute("ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute(
+            "ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT ''",
+            [],
+        );
         Ok(Self {
             conn: Mutex::new(conn),
         })

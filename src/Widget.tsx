@@ -8,7 +8,7 @@ import {
   startLiveWhisper,
   type LiveWhisperSession,
 } from "./lib/tauri";
-import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video } from "lucide-react";
+import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video, AlertCircle } from "lucide-react";
 import { useT } from "./lib/i18n";
 
 interface Props {
@@ -24,6 +24,7 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [label, setLabel] = useState("nodesk");
+  const [error, setError] = useState("");
   const liveRef = useRef<LiveWhisperSession | null>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<number | null>(null);
@@ -42,6 +43,12 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
     setTimeout(() => setLabel("nodesk"), ms);
   };
 
+  const flashError = (text: string) => {
+    setError(text);
+    setLabel("hata!");
+    setTimeout(() => setLabel("nodesk"), 3000);
+  };
+
   const formatElapsed = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -56,7 +63,7 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
       return;
     }
     if (trimmed.startsWith("[HATA]")) {
-      flashLabel(trimmed.slice(0, 60), 6000);
+      flashError(trimmed.slice("[HATA]".length).trim());
       return;
     }
     // AI ile duzelt
@@ -118,7 +125,7 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
       }, 150);
     } catch (e: any) {
       console.error("[widget] start err", e);
-      flashLabel(`hata: ${String(e).slice(0, 30)}`);
+      flashError(String(e?.message || e));
     }
   };
 
@@ -138,7 +145,7 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
       await saveTranscript(text);
     } catch (e: any) {
       console.error("[widget] stop err", e);
-      flashLabel(`hata: ${String(e).slice(0, 30)}`);
+      flashError(String(e?.message || e));
     } finally {
       setBusy(false);
     }
@@ -185,6 +192,16 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
           <span className={`dot ${recording ? "dot-rec" : ""}`} />
           <span className="label">{label}</span>
         </div>
+        {error && !recording && (
+          <button
+            className="widget-error-btn"
+            title={error}
+            onClick={() => setError("")}
+            style={{ color: "#e53935", flexShrink: 0 }}
+          >
+            <AlertCircle size={15} />
+          </button>
+        )}
         <button
           title={recording ? t("voice.stop") : t("voice.record")}
           onClick={toggleVoice}

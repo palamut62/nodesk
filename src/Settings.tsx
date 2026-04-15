@@ -26,6 +26,9 @@ export default function Settings({ onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [apiKeyMasked, setApiKeyMasked] = useState(true);
   const [keyDirty, setKeyDirty] = useState(false);
+  const [groqKey, setGroqKey] = useState("");
+  const [groqKeyMasked, setGroqKeyMasked] = useState(true);
+  const [groqKeyDirty, setGroqKeyDirty] = useState(false);
   const [model, setModel] = useState("");
   const [autostart, setAutostart] = useState(false);
   const [provider, setProvider] = useState<"openrouter" | "ollama">("openrouter");
@@ -42,6 +45,7 @@ export default function Settings({ onClose }: Props) {
         const settings: SettingsType = await getSettings();
         setApiKey(settings.openrouter_api_key);
         setModel(settings.openrouter_model);
+        setGroqKey(settings.groq_api_key ?? "");
         setAutostart(settings.autostart);
         setProvider((settings.ai_provider as "openrouter" | "ollama") || "openrouter");
         setOllamaUrl(settings.ollama_base_url || "http://127.0.0.1:11434");
@@ -83,6 +87,7 @@ export default function Settings({ onClose }: Props) {
       await saveSettings({
         openrouter_api_key: keyDirty ? apiKey : undefined,
         openrouter_model: model,
+        groq_api_key: groqKeyDirty ? groqKey : undefined,
         autostart,
         ai_provider: provider,
         ollama_base_url: ollamaUrl,
@@ -235,7 +240,7 @@ export default function Settings({ onClose }: Props) {
                       setKeyDirty(true);
                     }}
                     onFocus={() => {
-                      if (!keyDirty && apiKey.startsWith("••")) {
+                      if (!keyDirty && apiKey.startsWith("****")) {
                         setApiKey("");
                         setKeyDirty(true);
                       }
@@ -295,6 +300,36 @@ export default function Settings({ onClose }: Props) {
               </div>
             </>
           )}
+
+          <div className="settings-section">
+            <label className="settings-label">Groq API Key <span style={{ fontWeight: 400, opacity: 0.6 }}>(sesli not)</span></label>
+            <div className="settings-row">
+              <input
+                className="settings-input"
+                type={groqKeyMasked ? "password" : "text"}
+                placeholder="gsk_..."
+                value={groqKey}
+                onChange={(e) => {
+                  setGroqKey(e.target.value);
+                  setGroqKeyDirty(true);
+                }}
+                onFocus={() => {
+                  if (!groqKeyDirty && groqKey.startsWith("****")) {
+                    setGroqKey("");
+                    setGroqKeyDirty(true);
+                  }
+                }}
+              />
+              <button
+                className="settings-icon-btn"
+                onClick={() => setGroqKeyMasked((v) => !v)}
+                type="button"
+              >
+                {groqKeyMasked ? <Eye size={14} /> : <EyeOff size={14} />}
+              </button>
+            </div>
+            <div className="settings-hint">console.groq.com — ucretsiz, Whisper icin</div>
+          </div>
 
           <div className="settings-section">
             <label className="settings-check">

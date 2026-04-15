@@ -10,6 +10,8 @@ pub struct Settings {
     #[serde(default = "default_model")]
     pub openrouter_model: String,
     #[serde(default)]
+    pub groq_api_key: String,
+    #[serde(default)]
     pub autostart: bool,
     #[serde(default = "default_provider")]
     pub ai_provider: String,
@@ -51,8 +53,10 @@ impl SettingsStore {
                     openrouter_api_key: std::env::var("OPENROUTER_API_KEY").unwrap_or_default(),
                     openrouter_model: std::env::var("OPENROUTER_MODEL")
                         .unwrap_or_else(|_| default_model()),
-                    autostart: false,
-                    ai_provider: std::env::var("AI_PROVIDER").unwrap_or_else(|_| default_provider()),
+                    groq_api_key: std::env::var("GROQ_API_KEY").unwrap_or_default(),
+                    autostart: true,
+                    ai_provider: std::env::var("AI_PROVIDER")
+                        .unwrap_or_else(|_| default_provider()),
                     ollama_base_url: std::env::var("OLLAMA_BASE_URL")
                         .unwrap_or_else(|_| default_ollama_url()),
                     ollama_model: std::env::var("OLLAMA_MODEL")

@@ -17,6 +17,7 @@
     "core:window:allow-inner-size",
     "core:window:allow-scale-factor",
     "core:window:allow-current-monitor",
+    "core:window:allow-set-ignore-cursor-events",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "opener:default",

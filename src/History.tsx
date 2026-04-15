@@ -302,11 +302,10 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
                 </div>
 
                 <div
-                  className={`history-tooltip ${
-                    tooltipState.id === note.id && tooltipState.placement === "bottom"
+                  className={`history-tooltip ${tooltipState.id === note.id && tooltipState.placement === "bottom"
                       ? "bottom"
                       : ""
-                  }`}
+                    }`}
                   aria-hidden="true"
                 >
                   <div className="history-tooltip-title">
@@ -326,7 +325,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
 
         <div className="social-links">
           <a
-            href="https://github.com/umutins62/nodesk"
+            href="https://github.com/palamut62"
             target="_blank"
             rel="noreferrer"
             title="GitHub"
@@ -337,7 +336,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
             </svg>
           </a>
           <a
-            href="https://x.com/umutins62"
+            href="https://x.com/palamut62"
             target="_blank"
             rel="noreferrer"
             title="X"

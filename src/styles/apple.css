@@ -113,6 +113,18 @@ button {
   cursor: not-allowed;
 }
 
+.widget-error-btn {
+  flex-shrink: 0;
+  animation: err-pulse 2s ease-in-out infinite;
+}
+.widget-error-btn:hover {
+  background: rgba(229, 57, 53, 0.12) !important;
+}
+@keyframes err-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 .widget-pill button {
   width: 32px;
   height: 32px;
@@ -518,10 +530,19 @@ button {
 .region-pick-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.25);
   cursor: crosshair;
   user-select: none;
   z-index: 9999;
+}
+.region-pick-mask {
+  position: absolute;
+  background: rgba(12, 12, 12, 0.28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.region-pick-mask.full {
+  inset: 0;
 }
 .region-pick-hint {
   position: absolute;
@@ -537,9 +558,9 @@ button {
 }
 .region-pick-rect {
   position: absolute;
-  border: 2px dashed #fff;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  border: 2px solid #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.38) inset;
   pointer-events: none;
 }
 
@@ -1228,4 +1249,102 @@ select.settings-input {
   padding: 4px 6px;
   z-index: 100;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ============ LIVE ANNOTATOR ============ */
+.annotator-root {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.annotator-toolbar-window {
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  background: transparent;
+}
+
+.annotator-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+
+.annotator-toolbar {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 999999;
+  background: rgba(20, 24, 31, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+  padding: 10px;
+  min-width: 270px;
+  pointer-events: auto;
+}
+
+.annotator-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.annotator-row:last-child {
+  margin-bottom: 0;
+}
+
+.annotator-btn {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #edf1f7;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.annotator-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.annotator-btn.active {
+  background: rgba(79, 195, 247, 0.28);
+  border-color: rgba(79, 195, 247, 0.7);
+}
+
+.annotator-btn.danger {
+  background: rgba(229, 57, 53, 0.22);
+  border-color: rgba(229, 57, 53, 0.6);
+}
+
+.annotator-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.annotator-color.active {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+.annotator-toolbar input[type="range"] {
+  width: 130px;
+  margin-left: 8px;
+  accent-color: #4fc3f7;
+}
+
+.annotator-hint {
+  font-size: 11px;
+  color: rgba(237, 241, 247, 0.8);
 }

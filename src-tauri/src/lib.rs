@@ -56,11 +56,17 @@ fn get_config(store: State<SettingsStore>) -> AppConfig {
 #[tauri::command]
 fn get_settings(store: State<SettingsStore>) -> Settings {
     let mut s = store.get();
-    // API key'i frontend'e tam gösterme — sadece set edilmiş mi bilsin
+    // API key'leri frontend'e tam gosterme
     if !s.openrouter_api_key.is_empty() {
         s.openrouter_api_key = format!(
-            "••••{}",
+            "****{}",
             &s.openrouter_api_key[s.openrouter_api_key.len().saturating_sub(4)..]
+        );
+    }
+    if !s.groq_api_key.is_empty() {
+        s.groq_api_key = format!(
+            "****{}",
+            &s.groq_api_key[s.groq_api_key.len().saturating_sub(4)..]
         );
     }
     s
@@ -70,6 +76,7 @@ fn get_settings(store: State<SettingsStore>) -> Settings {
 pub struct SaveSettingsPayload {
     pub openrouter_api_key: Option<String>,
     pub openrouter_model: Option<String>,
+    pub groq_api_key: Option<String>,
     pub autostart: Option<bool>,
     pub ai_provider: Option<String>,
     pub ollama_base_url: Option<String>,
@@ -84,8 +91,8 @@ fn save_settings(
 ) -> Result<(), String> {
     let mut cur = store.get();
     if let Some(k) = payload.openrouter_api_key {
-        // maskeli gelirse (••••) değiştirme
-        if !k.starts_with("••") && !k.is_empty() {
+        // maskeli gelirse (****) degistirme
+        if !k.starts_with("**") && !k.is_empty() {
             cur.openrouter_api_key = k;
         } else if k.is_empty() {
             cur.openrouter_api_key = String::new();
@@ -109,6 +116,13 @@ fn save_settings(
     if let Some(m) = payload.ollama_model {
         if !m.is_empty() {
             cur.ollama_model = m;
+        }
+    }
+    if let Some(k) = payload.groq_api_key {
+        if !k.starts_with("**") && !k.is_empty() {
+            cur.groq_api_key = k;
+        } else if k.is_empty() {
+            cur.groq_api_key = String::new();
         }
     }
     if let Some(a) = payload.autostart {
@@ -178,16 +192,25 @@ async fn ai_fix_text(
             .await
             .map_err(|e| e.to_string())
     } else {
-        openrouter::fix_text(&payload.text, mode, &s.openrouter_api_key, &s.openrouter_model)
-            .await
-            .map_err(|e| e.to_string())
+        openrouter::fix_text(
+            &payload.text,
+            mode,
+            &s.openrouter_api_key,
+            &s.openrouter_model,
+        )
+        .await
+        .map_err(|e| e.to_string())
     }
 }
 
 #[tauri::command]
-async fn transcribe_audio(payload: TranscribePayload) -> Result<String, String> {
+async fn transcribe_audio(
+    store: State<'_, SettingsStore>,
+    payload: TranscribePayload,
+) -> Result<String, String> {
     let mime = payload.mime.as_deref().unwrap_or("audio/webm");
-    whisper::transcribe(payload.audio, mime)
+    let s = store.get();
+    whisper::transcribe(payload.audio, mime, &s.groq_api_key)
         .await
         .map_err(|e| e.to_string())
 }
@@ -212,12 +235,10 @@ fn capture_screen(_window: WebviewWindow) -> Result<String, String> {
     screenshot::capture_screen().map_err(|e| e.to_string())
 }
 
-use std::sync::{Arc, Mutex as StdMutex};
-use std::sync::atomic::AtomicBool;
-pub struct RecorderState(pub StdMutex<Option<Arc<AtomicBool>>>);
+pub use recorder::FfmpegState as RecorderState;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RecordGifPayload {
+pub struct RecordMp4Payload {
     pub output_path: String,
     pub x: Option<i32>,
     pub y: Option<i32>,
@@ -225,65 +246,125 @@ pub struct RecordGifPayload {
     pub h: Option<u32>,
     pub fps: Option<u32>,
     pub max_seconds: Option<u64>,
-    pub blur_outside: Option<bool>,
+    pub speed: Option<f32>,
+    pub lossless: Option<bool>,
 }
 
 #[tauri::command]
-async fn record_gif(
+fn check_ffmpeg() -> bool {
+    recorder::check_ffmpeg()
+}
+
+#[tauri::command]
+fn start_recording(
     state: State<'_, RecorderState>,
-    payload: RecordGifPayload,
+    payload: RecordMp4Payload,
 ) -> Result<(), String> {
-    let flag = Arc::new(AtomicBool::new(false));
-    {
-        let mut slot = state.0.lock().map_err(|_| "recorder lock")?;
-        if slot.is_some() {
-            return Err("Zaten bir kayıt sürüyor".into());
+    let mut slot = state.0.lock().map_err(|_| "recorder lock")?;
+    if let Some(child) = slot.as_mut() {
+        if child.try_wait().map_err(|e| e.to_string())?.is_none() {
+            let _ = recorder::graceful_stop(child);
         }
-        *slot = Some(flag.clone());
+        *slot = None;
     }
+    if slot.is_some() {
+        return Err("Zaten bir kayit suruyor".into());
+    }
+
     let region = match (payload.x, payload.y, payload.w, payload.h) {
         (Some(x), Some(y), Some(w), Some(h)) if w > 0 && h > 0 => {
             Some(recorder::Region { x, y, w, h })
         }
         _ => None,
     };
-    let fps = payload.fps.unwrap_or(12);
-    let max_seconds = payload.max_seconds.unwrap_or(300);
-    let blur_outside = payload.blur_outside.unwrap_or(false);
-    let output_path = payload.output_path.clone();
-    let flag_for_task = flag.clone();
+    let fps = payload.fps.unwrap_or(24);
+    let max_seconds = payload.max_seconds.unwrap_or(300).min(300);
+    let speed = payload.speed.unwrap_or(1.0);
+    let lossless = payload.lossless.unwrap_or(false);
 
-    let result = tokio::task::spawn_blocking(move || {
-        recorder::record_gif_with_flag(
-            &output_path,
-            region,
-            fps,
-            max_seconds,
-            blur_outside,
-            flag_for_task,
-        )
-    })
-    .await
+    let mut child = recorder::start_mp4(
+        &payload.output_path,
+        region,
+        fps,
+        max_seconds,
+        speed,
+        lossless,
+    )
     .map_err(|e| e.to_string())?;
 
-    if let Ok(mut slot) = state.0.lock() {
-        *slot = None;
+    std::thread::sleep(std::time::Duration::from_millis(180));
+    if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+        let code = status.code().unwrap_or(-1);
+        return Err(format!(
+            "Kayit baslatilamadi (ffmpeg erken kapandi, kod: {code}). FFmpeg ve ekran erisimi kontrol et."
+        ));
     }
 
-    result.map_err(|e| e.to_string())
+    *slot = Some(child);
+    Ok(())
 }
 
 #[tauri::command]
-fn stop_recording(state: State<'_, RecorderState>) -> Result<(), String> {
-    let slot = state.0.lock().map_err(|_| "recorder lock")?;
-    match slot.as_ref() {
-        Some(f) => {
-            f.store(true, std::sync::atomic::Ordering::SeqCst);
-            eprintln!("[recorder] stop flag set");
-        }
-        None => eprintln!("[recorder] stop called but no active recording"),
+async fn stop_recording(state: State<'_, RecorderState>) -> Result<(), String> {
+    let mut child_opt = {
+        let mut slot = state.0.lock().map_err(|_| "recorder lock")?;
+        slot.take()
+    };
+    if let Some(mut child) = child_opt.take() {
+        tokio::task::spawn_blocking(move || recorder::graceful_stop(&mut child))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExportGifPayload {
+    pub input_path: String,
+    pub output_path: String,
+    pub fps: Option<u32>,
+    pub width: Option<u32>,
+    pub speed: Option<f32>,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub w: Option<u32>,
+    pub h: Option<u32>,
+}
+
+#[tauri::command]
+async fn export_gif(payload: ExportGifPayload) -> Result<(), String> {
+    let fps = payload.fps.unwrap_or(12);
+    let width = payload.width.unwrap_or(0);
+    let speed = payload.speed.unwrap_or(1.0);
+    let region = match (payload.x, payload.y, payload.w, payload.h) {
+        (Some(x), Some(y), Some(w), Some(h)) if w > 0 && h > 0 => {
+            Some(recorder::Region { x, y, w, h })
+        }
+        _ => None,
+    };
+    tokio::task::spawn_blocking(move || {
+        recorder::mp4_to_gif(
+            &payload.input_path,
+            &payload.output_path,
+            fps,
+            width,
+            speed,
+            region,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_file(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(p).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -292,8 +373,8 @@ fn start_drag(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
-    app.exit(0);
+fn quit_app(_app: tauri::AppHandle) {
+    std::process::exit(0);
 }
 
 #[tauri::command]
@@ -375,8 +456,11 @@ pub fn run() {
             hide_to_tray,
             capture_screen,
             write_binary_file,
-            record_gif,
-            stop_recording
+            check_ffmpeg,
+            start_recording,
+            stop_recording,
+            export_gif,
+            delete_file
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -389,12 +473,11 @@ pub fn run() {
             let store = SettingsStore::load(settings_path);
             app.manage(store);
 
-            app.manage(RecorderState(StdMutex::new(None)));
+            app.manage(RecorderState::new());
 
-            // Tray icon + menü
+            // Tray icon + menu
             let show_item = MenuItem::with_id(app, "show", "Göster / Gizle", true, None::<&str>)?;
-            let settings_item =
-                MenuItem::with_id(app, "settings", "Ayarlar", true, None::<&str>)?;
+            let settings_item = MenuItem::with_id(app, "settings", "Ayarlar", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &settings_item, &quit_item])?;
 
@@ -412,7 +495,10 @@ pub fn run() {
                             let _ = w.emit("open-settings", ());
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        let _ = app.global_shortcut().unregister_all();
+                        std::process::exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -453,9 +539,10 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // X tuşu → kapatma yerine tray'e gizle
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .run(tauri::generate_context!())
