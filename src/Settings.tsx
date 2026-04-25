@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Loader2, RefreshCw, Save, X } from "lucide-react";
 import ErrorBubble from "./components/ErrorBubble";
+import WindowControls from "./components/WindowControls";
 import { useLang, useT, type Lang } from "./lib/i18n";
 import {
   getSettings,
@@ -108,8 +109,9 @@ export default function Settings({ onClose }: Props) {
       <div className="editor-shell">
         <div className="editor-card">
           <div className="editor-titlebar">
-            <div style={{ width: 26 }} />
+            <div style={{ width: 78 }} />
             <div className="title">{t("settingsTitle")}</div>
+            <WindowControls />
             <button onClick={onClose} title={t("close")}>
               <X size={14} />
             </button>
@@ -126,8 +128,9 @@ export default function Settings({ onClose }: Props) {
         {error && <ErrorBubble message={error} onClose={() => setError("")} />}
 
         <div className="editor-titlebar">
-          <div style={{ width: 26 }} />
+          <div style={{ width: 78 }} />
           <div className="title">{t("settingsTitle")}</div>
+          <WindowControls />
           <button onClick={onClose} title={t("close")}>
             <X size={14} />
           </button>

@@ -8,6 +8,7 @@ import {
   LogicalSize,
 } from "@tauri-apps/api/window";
 import ErrorBubble from "./components/ErrorBubble";
+import WindowControls from "./components/WindowControls";
 import {
   checkFfmpeg,
   deleteFile,
@@ -342,7 +343,9 @@ export default function Recorder({ onClose }: Props) {
         {error && <ErrorBubble message={error} onClose={() => setError("")} />}
 
         <div className="editor-titlebar">
+          <div style={{ width: 78 }} />
           <div className="title">Ekran Kaydi (MP4 / GIF)</div>
+          <WindowControls />
           <button onClick={onClose} title="Kapat" disabled={recording || converting}>
             <X size={14} />
           </button>

@@ -7,6 +7,8 @@ import Editor from "./Editor";
 import History from "./History";
 import Settings from "./Settings";
 import ScreenshotEditor from "./ScreenshotEditor";
+import OcrCapture from "./OcrCapture";
+import ClipboardPanel from "./ClipboardPanel";
 import Recorder from "./Recorder";
 import { DialogHost } from "./components/Dialog";
 import {
@@ -33,7 +35,18 @@ function App() {
   const [noteToLoad, setNoteToLoad] = useState<Note | null>(null);
   const [editorReturnView, setEditorReturnView] = useState<"pill" | "history">("pill");
   const [screenshotData, setScreenshotData] = useState<string | null>(null);
+  const [maximized, setMaximized] = useState(false);
   const busyRef = useRef(false);
+
+  useEffect(() => {
+    const w = getCurrentWindow();
+    let un: (() => void) | undefined;
+    w.isMaximized().then(setMaximized).catch(() => {});
+    w.onResized(() => {
+      w.isMaximized().then(setMaximized).catch(() => {});
+    }).then((u) => { un = u; });
+    return () => { un?.(); };
+  }, []);
 
   const morphTo = useCallback(
     async (
@@ -74,7 +87,7 @@ function App() {
         }
       }
 
-      if (target === "screenshot") {
+      if (target === "screenshot" || target === "ocr") {
         try {
           const win = getCurrentWindow();
           await win.hide();
@@ -130,7 +143,11 @@ function App() {
       <DialogHost />
       <div
         className={`morph-frame phase-${phase}`}
-        style={{ width: frame.w, height: frame.h }}
+        style={
+          maximized && view !== "pill"
+            ? { width: "100vw", height: "100vh" }
+            : { width: frame.w, height: frame.h }
+        }
       >
         {view === "pill" && (
           <Widget
@@ -139,6 +156,8 @@ function App() {
             onSettings={() => morphTo("settings")}
             onScreenshot={() => morphTo("screenshot")}
             onRecord={() => morphTo("recorder")}
+            onOcr={() => morphTo("ocr")}
+            onClipboard={() => morphTo("clipboard")}
           />
         )}
         {view === "editor" && (
@@ -165,6 +184,15 @@ function App() {
             imageBase64={screenshotData}
             onClose={() => morphTo("pill")}
           />
+        )}
+        {view === "ocr" && screenshotData && (
+          <OcrCapture
+            imageBase64={screenshotData}
+            onClose={() => morphTo("pill")}
+          />
+        )}
+        {view === "clipboard" && (
+          <ClipboardPanel onClose={() => morphTo("pill")} />
         )}
       </div>
     </div>

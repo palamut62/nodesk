@@ -24,6 +24,7 @@ import {
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useT } from "./lib/i18n";
+import WindowControls from "./components/WindowControls";
 
 type Tool = "select" | "text" | "rect" | "arrow" | "blur" | "blur-inverse";
 type AnnotationType = "text" | "rect" | "arrow" | "blur" | "blur-inverse";
@@ -758,8 +759,9 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     <div className="editor-shell">
       <div className="editor-card">
         <div className="editor-titlebar">
-          <div style={{ width: 26 }} />
+          <div style={{ width: 78 }} />
           <div className="title">{t("screenshot")}</div>
+          <WindowControls />
           <button onClick={onClose} title={t("close")}>
             <X size={14} />
           </button>

@@ -8,7 +8,7 @@ import {
   startLiveWhisper,
   type LiveWhisperSession,
 } from "./lib/tauri";
-import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video, AlertCircle } from "lucide-react";
+import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video, AlertCircle, ScanText, Clipboard } from "lucide-react";
 import { useT } from "./lib/i18n";
 
 interface Props {
@@ -17,9 +17,11 @@ interface Props {
   onSettings: () => void;
   onScreenshot: () => void;
   onRecord: () => void;
+  onOcr: () => void;
+  onClipboard: () => void;
 }
 
-export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot, onRecord }: Props) {
+export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot, onRecord, onOcr, onClipboard }: Props) {
   const t = useT();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -232,6 +234,20 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
               disabled={busy}
             >
               <Video size={16} />
+            </button>
+            <button
+              title="Ekrandan metin yakala (OCR)"
+              onClick={onOcr}
+              disabled={busy}
+            >
+              <ScanText size={16} />
+            </button>
+            <button
+              title="Pano (kopyalanan metinler)"
+              onClick={onClipboard}
+              disabled={busy}
+            >
+              <Clipboard size={16} />
             </button>
             <button
               className="primary"

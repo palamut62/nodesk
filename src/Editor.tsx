@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import WindowControls from "./components/WindowControls";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -390,8 +391,9 @@ export default function Editor({ noteToLoad, onClose }: Props) {
         {error && <ErrorBubble message={error} onClose={() => setError("")} />}
 
         <div className="editor-titlebar">
-          <div style={{ width: 26 }} />
+          <div style={{ width: 78 }} />
           <div className="title">{currentId ? t("editNote") : t("newNoteTitle")}</div>
+          <WindowControls />
           <button onClick={onClose} title={t("close")}>
             <X size={14} />
           </button>

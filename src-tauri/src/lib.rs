@@ -1,4 +1,6 @@
+mod clipboard;
 mod db;
+mod ocr;
 mod ollama;
 mod openrouter;
 mod recorder;
@@ -6,9 +8,11 @@ mod screenshot;
 mod settings;
 mod whisper;
 
+use clipboard::{ClipItem, ClipStore};
 use db::{Db, Note};
 use serde::{Deserialize, Serialize};
 use settings::{ModelInfo, Settings, SettingsStore};
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -235,6 +239,36 @@ fn capture_screen(_window: WebviewWindow) -> Result<String, String> {
     screenshot::capture_screen().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn list_clipboard(store: State<Arc<ClipStore>>) -> Vec<ClipItem> {
+    store.list()
+}
+
+#[tauri::command]
+fn toggle_clip_pin(store: State<Arc<ClipStore>>, id: u64) -> Result<(), String> {
+    store.toggle_pin(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_clip(store: State<Arc<ClipStore>>, id: u64) {
+    store.delete(id);
+}
+
+#[tauri::command]
+fn copy_clip(store: State<Arc<ClipStore>>, id: u64) -> Result<(), String> {
+    let text = store.get_text(id).ok_or_else(|| "id bulunamadi".to_string())?;
+    store.suppress(&text);
+    clipboard::write_text(&text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn ocr_image(data: Vec<u8>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || ocr::extract_text(&data))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 pub use recorder::FfmpegState as RecorderState;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -455,6 +489,11 @@ pub fn run() {
             quit_app,
             hide_to_tray,
             capture_screen,
+            ocr_image,
+            list_clipboard,
+            toggle_clip_pin,
+            delete_clip,
+            copy_clip,
             write_binary_file,
             check_ffmpeg,
             start_recording,
@@ -475,15 +514,21 @@ pub fn run() {
 
             app.manage(RecorderState::new());
 
+            let clip_path = data_dir.join("clipboard.json");
+            let clip_store = Arc::new(ClipStore::load(clip_path));
+            app.manage(clip_store.clone());
+            clipboard::start_watcher(app.handle().clone(), clip_store);
+
             // Tray icon + menu
             let show_item = MenuItem::with_id(app, "show", "Göster / Gizle", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Ayarlar", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &settings_item, &quit_item])?;
 
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray/32x32.png"))?;
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .tooltip("nodesk")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {

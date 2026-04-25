@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FileText, Loader2, Pencil, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { confirmDialog } from "./components/Dialog";
 import ErrorBubble from "./components/ErrorBubble";
+import WindowControls from "./components/WindowControls";
 import { sanitizeAiHtml } from "./lib/aiHtml";
 import { useT } from "./lib/i18n";
 import {
@@ -175,6 +176,7 @@ export default function History({ onOpenNote, onNewNote, onClose }: Props) {
             <Plus size={14} />
           </button>
           <div className="title">{t("historyTitle")}</div>
+          <WindowControls />
           <button onClick={onClose} title={t("close")}>
             <X size={14} />
           </button>

@@ -122,7 +122,7 @@ export const deleteFile = (path: string) =>
 
 export const aiFixText = (
   text: string,
-  mode: "fix" | "shorten" | "expand" | "format" = "fix",
+  mode: "fix" | "shorten" | "expand" | "format" | "ocr" = "fix",
 ) => invoke<string>("ai_fix_text", { payload: { text, mode } });
 
 export async function transcribeAudio(
@@ -465,15 +465,37 @@ export const quitApp = () => invoke<void>("quit_app");
 
 export const captureScreen = () => invoke<string>("capture_screen");
 
-export type ViewKind = "pill" | "editor" | "history" | "settings" | "screenshot" | "recorder";
+export const ocrImage = (data: number[]) =>
+  invoke<string>("ocr_image", { data });
+
+export interface ClipItem {
+  id: number;
+  text: string;
+  pinned: boolean;
+  ts: number;
+}
+
+export const listClipboard = () => invoke<ClipItem[]>("list_clipboard");
+export const toggleClipPin = (id: number) =>
+  invoke<void>("toggle_clip_pin", { id });
+export const deleteClip = (id: number) =>
+  invoke<void>("delete_clip", { id });
+export const copyClip = (id: number) =>
+  invoke<void>("copy_clip", { id });
+
+export type ViewKind =
+  | "pill" | "editor" | "history" | "settings"
+  | "screenshot" | "recorder" | "ocr" | "clipboard";
 
 export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
-  pill: { w: 410, h: 56 },
+  pill: { w: 482, h: 56 },
   editor: { w: 700, h: 600 },
   history: { w: 460, h: 600 },
   settings: { w: 460, h: 520 },
   screenshot: { w: 900, h: 700 },
   recorder: { w: 520, h: 640 },
+  ocr: { w: 900, h: 780 },
+  clipboard: { w: 460, h: 600 },
 };
 
 export async function setAlwaysOnTop(value: boolean) {
@@ -495,6 +517,9 @@ export async function focusWindow() {
 export async function setWindowBox(w: number, h: number): Promise<void> {
   const win = getCurrentWindow();
   try {
+    if (await win.isMaximized()) {
+      await win.unmaximize();
+    }
     const scale = await win.scaleFactor();
     const pos = await win.outerPosition();
     const startX = pos.x / scale;

@@ -14,6 +14,12 @@ pub async fn fix_text(text: &str, mode: &str, key: &str, model: &str) -> Result<
         "shorten" => "Verilen Türkçe metni anlamını koruyarak kısalt. Sadece düzenlenmiş metni döndür, açıklama yapma.",
         "expand" => "Verilen Türkçe metni aynı dilde, aynı üslupla genişlet ve detaylandır. Sadece metni döndür.",
         "format" => "Verilen metni markdown başlıkları, listeler ve to-do'larla güzel biçimlendir. Sadece markdown döndür.",
+        "ocr" => "Verilen metin OCR ile ekrandan okundu, yazim/karakter hatalari iceriyor olabilir. Gorevin:\n\
+- Yazim, karakter tanima hatalarini ve bozuk Turkce karakterleri duzelt.\n\
+- Satir sonlarini, paragraf yapisini ve girintiyi OLDUGU GIBI koru.\n\
+- Anlami, kelime sirasini, icerik ve duzeni KESINLIKLE degistirme; hicbir sey ekleme veya cikarma.\n\
+- Cikti SADECE duz metin olsun. HTML, markdown, kod blogu, baslik, liste, aciklama, tirnak, etiket KULLANMA.\n\
+- Sadece duzeltilmis duz metni dondur, baska hicbir sey yazma.",
         _ => "Türkçe bir notu hem yazım/dilbilgisi/noktalama olarak düzelt hem de okunabilir biçimde yapılandır. Kurallar:\n\
 - Anlamı, üslubu ve içeriği değiştirme; hiçbir şey ekleme veya çıkarma.\n\
 - Metin tek bir düşünce/paragrafsa sadece düzeltilmiş paragraf(lar) olarak döndür.\n\
