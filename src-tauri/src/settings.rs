@@ -19,6 +19,14 @@ pub struct Settings {
     pub ollama_base_url: String,
     #[serde(default = "default_ollama_model")]
     pub ollama_model: String,
+    #[serde(default)]
+    pub nvidia_api_key: String,
+    #[serde(default = "default_nvidia_model")]
+    pub nvidia_model: String,
+}
+
+fn default_nvidia_model() -> String {
+    "deepseek-ai/deepseek-v4-flash".to_string()
 }
 
 fn default_model() -> String {
@@ -61,6 +69,9 @@ impl SettingsStore {
                         .unwrap_or_else(|_| default_ollama_url()),
                     ollama_model: std::env::var("OLLAMA_MODEL")
                         .unwrap_or_else(|_| default_ollama_model()),
+                    nvidia_api_key: std::env::var("NVIDIA_API_KEY").unwrap_or_default(),
+                    nvidia_model: std::env::var("NVIDIA_MODEL")
+                        .unwrap_or_else(|_| default_nvidia_model()),
                 }
             });
         Self {

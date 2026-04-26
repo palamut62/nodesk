@@ -30,6 +30,8 @@ export interface Settings {
   ai_provider: string;
   ollama_base_url: string;
   ollama_model: string;
+  nvidia_api_key: string;
+  nvidia_model: string;
 }
 
 export interface ModelInfo {
@@ -47,6 +49,8 @@ export const saveSettings = (payload: {
   ai_provider?: string;
   ollama_base_url?: string;
   ollama_model?: string;
+  nvidia_api_key?: string;
+  nvidia_model?: string;
 }) => invoke<void>("save_settings", { payload });
 
 export const listModels = () => invoke<ModelInfo[]>("list_models");

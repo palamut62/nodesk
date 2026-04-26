@@ -1,6 +1,7 @@
 mod clipboard;
 mod db;
 mod ocr;
+mod nvidia;
 mod ollama;
 mod openrouter;
 mod recorder;
@@ -73,6 +74,12 @@ fn get_settings(store: State<SettingsStore>) -> Settings {
             &s.groq_api_key[s.groq_api_key.len().saturating_sub(4)..]
         );
     }
+    if !s.nvidia_api_key.is_empty() {
+        s.nvidia_api_key = format!(
+            "****{}",
+            &s.nvidia_api_key[s.nvidia_api_key.len().saturating_sub(4)..]
+        );
+    }
     s
 }
 
@@ -85,6 +92,8 @@ pub struct SaveSettingsPayload {
     pub ai_provider: Option<String>,
     pub ollama_base_url: Option<String>,
     pub ollama_model: Option<String>,
+    pub nvidia_api_key: Option<String>,
+    pub nvidia_model: Option<String>,
 }
 
 #[tauri::command]
@@ -122,6 +131,18 @@ fn save_settings(
             cur.ollama_model = m;
         }
     }
+    if let Some(k) = payload.nvidia_api_key {
+        if !k.starts_with("**") && !k.is_empty() {
+            cur.nvidia_api_key = k;
+        } else if k.is_empty() {
+            cur.nvidia_api_key = String::new();
+        }
+    }
+    if let Some(m) = payload.nvidia_model {
+        if !m.is_empty() {
+            cur.nvidia_model = m;
+        }
+    }
     if let Some(k) = payload.groq_api_key {
         if !k.starts_with("**") && !k.is_empty() {
             cur.groq_api_key = k;
@@ -146,6 +167,10 @@ async fn list_models(store: State<'_, SettingsStore>) -> Result<Vec<ModelInfo>, 
     let s = store.get();
     if s.ai_provider == "ollama" {
         ollama::list_models(&s.ollama_base_url)
+            .await
+            .map_err(|e| e.to_string())
+    } else if s.ai_provider == "nvidia" {
+        nvidia::list_models(&s.nvidia_api_key)
             .await
             .map_err(|e| e.to_string())
     } else {
@@ -193,6 +218,10 @@ async fn ai_fix_text(
     let s = store.get();
     if s.ai_provider == "ollama" {
         ollama::fix_text(&payload.text, mode, &s.ollama_base_url, &s.ollama_model)
+            .await
+            .map_err(|e| e.to_string())
+    } else if s.ai_provider == "nvidia" {
+        nvidia::fix_text(&payload.text, mode, &s.nvidia_api_key, &s.nvidia_model)
             .await
             .map_err(|e| e.to_string())
     } else {

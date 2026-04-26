@@ -32,9 +32,13 @@ export default function Settings({ onClose }: Props) {
   const [groqKeyDirty, setGroqKeyDirty] = useState(false);
   const [model, setModel] = useState("");
   const [autostart, setAutostart] = useState(false);
-  const [provider, setProvider] = useState<"openrouter" | "ollama">("openrouter");
+  const [provider, setProvider] = useState<"openrouter" | "ollama" | "nvidia">("openrouter");
   const [ollamaUrl, setOllamaUrl] = useState("http://127.0.0.1:11434");
   const [ollamaModel, setOllamaModel] = useState("gemma4:31b-cloud");
+  const [nvidiaKey, setNvidiaKey] = useState("");
+  const [nvidiaKeyMasked, setNvidiaKeyMasked] = useState(true);
+  const [nvidiaKeyDirty, setNvidiaKeyDirty] = useState(false);
+  const [nvidiaModel, setNvidiaModel] = useState("deepseek-ai/deepseek-v4-flash");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -48,9 +52,11 @@ export default function Settings({ onClose }: Props) {
         setModel(settings.openrouter_model);
         setGroqKey(settings.groq_api_key ?? "");
         setAutostart(settings.autostart);
-        setProvider((settings.ai_provider as "openrouter" | "ollama") || "openrouter");
+        setProvider((settings.ai_provider as "openrouter" | "ollama" | "nvidia") || "openrouter");
         setOllamaUrl(settings.ollama_base_url || "http://127.0.0.1:11434");
         setOllamaModel(settings.ollama_model || "gemma4:31b-cloud");
+        setNvidiaKey(settings.nvidia_api_key ?? "");
+        setNvidiaModel(settings.nvidia_model || "deepseek-ai/deepseek-v4-flash");
         setError("");
       } catch (err) {
         setError(getErrorMessage(err));
@@ -93,6 +99,8 @@ export default function Settings({ onClose }: Props) {
         ai_provider: provider,
         ollama_base_url: ollamaUrl,
         ollama_model: ollamaModel,
+        nvidia_api_key: nvidiaKeyDirty ? nvidiaKey : undefined,
+        nvidia_model: nvidiaModel,
       });
       setError("");
       setStatus(t("savedNote"));
@@ -158,12 +166,13 @@ export default function Settings({ onClose }: Props) {
                 className="settings-input"
                 value={provider}
                 onChange={(e) => {
-                  setProvider(e.target.value as "openrouter" | "ollama");
+                  setProvider(e.target.value as "openrouter" | "ollama" | "nvidia");
                   setModels([]);
                 }}
               >
                 <option value="openrouter">OpenRouter</option>
                 <option value="ollama">Ollama</option>
+                <option value="nvidia">NVIDIA</option>
               </select>
             </div>
             <div className="settings-hint">{t("voiceTranscriptionHint")}</div>
@@ -298,6 +307,78 @@ export default function Settings({ onClose }: Props) {
                     ) : (
                       <RefreshCw size={14} />
                     )}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {provider === "nvidia" && (
+            <>
+              <div className="settings-section">
+                <label className="settings-label">NVIDIA {t("apiKey")}</label>
+                <div className="settings-row">
+                  <input
+                    className="settings-input"
+                    type={nvidiaKeyMasked ? "password" : "text"}
+                    placeholder="nvapi-..."
+                    value={nvidiaKey}
+                    onChange={(e) => {
+                      setNvidiaKey(e.target.value);
+                      setNvidiaKeyDirty(true);
+                    }}
+                    onFocus={() => {
+                      if (!nvidiaKeyDirty && nvidiaKey.startsWith("****")) {
+                        setNvidiaKey("");
+                        setNvidiaKeyDirty(true);
+                      }
+                    }}
+                  />
+                  <button
+                    className="settings-icon-btn"
+                    onClick={() => setNvidiaKeyMasked((v) => !v)}
+                    type="button"
+                  >
+                    {nvidiaKeyMasked ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+                </div>
+                <div className="settings-hint">build.nvidia.com — integrate.api.nvidia.com</div>
+              </div>
+
+              <div className="settings-section">
+                <label className="settings-label">{t("model")}</label>
+                <div className="settings-row">
+                  {models.length > 0 ? (
+                    <select
+                      className="settings-input"
+                      value={nvidiaModel}
+                      onChange={(e) => setNvidiaModel(e.target.value)}
+                    >
+                      {!models.find((item) => item.id === nvidiaModel) && nvidiaModel && (
+                        <option value={nvidiaModel}>{nvidiaModel}</option>
+                      )}
+                      {models.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="settings-input"
+                      value={nvidiaModel}
+                      onChange={(e) => setNvidiaModel(e.target.value)}
+                      placeholder="deepseek-ai/deepseek-v4-flash"
+                    />
+                  )}
+                  <button
+                    className="settings-icon-btn"
+                    onClick={() => void fetchModels()}
+                    disabled={modelsBusy}
+                    title={t("refreshModels")}
+                    type="button"
+                  >
+                    {modelsBusy ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
                   </button>
                 </div>
               </div>
