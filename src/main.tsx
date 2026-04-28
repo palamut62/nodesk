@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Widget from "./Widget";
+import DockedBar from "./DockedBar";
 import Editor from "./Editor";
 import History from "./History";
 import Settings from "./Settings";
@@ -10,14 +11,21 @@ import ScreenshotEditor from "./ScreenshotEditor";
 import OcrCapture from "./OcrCapture";
 import ClipboardPanel from "./ClipboardPanel";
 import Recorder from "./Recorder";
+import VideoEditor from "./VideoEditor";
 import { DialogHost } from "./components/Dialog";
 import {
+  applyDock,
   captureScreen,
+  centerWindowBox,
+  computeDockGeom,
   focusWindow,
   getNote,
+  getSettings,
   setAlwaysOnTop,
   setWindowBox,
   VIEW_SIZES,
+  type BarMode,
+  type DockEdge,
   type Note,
   type ViewKind,
 } from "./lib/tauri";
@@ -36,6 +44,9 @@ function App() {
   const [editorReturnView, setEditorReturnView] = useState<"pill" | "history">("pill");
   const [screenshotData, setScreenshotData] = useState<string | null>(null);
   const [maximized, setMaximized] = useState(false);
+  const [barMode, setBarMode] = useState<BarMode>("floating");
+  const [dockEdge, setDockEdge] = useState<DockEdge>("right");
+  const [dockExpanded, setDockExpanded] = useState(false);
   const busyRef = useRef(false);
 
   useEffect(() => {
@@ -56,23 +67,40 @@ function App() {
       if (busyRef.current) return;
       busyRef.current = true;
 
-      const size = VIEW_SIZES[target];
+      if (barMode === "docked") {
+        setDockExpanded(false);
+      }
+      let size = VIEW_SIZES[target];
+      if (target === "pill" && barMode === "docked") {
+        const g = await computeDockGeom(dockEdge, false);
+        size = { w: g.w, h: g.h };
+      }
       const current = frame;
       const growing = size.w > current.w || size.h > current.h;
+      const dockedAway = barMode === "docked" && target !== "pill";
+      const dockedHome = barMode === "docked" && target === "pill";
 
-      // Büyüyorsa: OS penceresini şimdi büyüt (hedef boyuta), CSS frame eski boyuttan
-      // hedefe doğru transition ile büyür. Pencere transparent, dışı görünmez.
-      // Küçülüyorsa: OS penceresi büyük kalır, CSS frame küçülür, bitiminde OS shrink.
-      if (growing) {
-        await setWindowBox(size.w, size.h);
+      // Docked geçişler: önce eski view'ı tamamen gizle, sonra OS penceresini taşı,
+      // sonra yeni view'ı göster — geçiş sırasında bar asla yanlış konumda görünmez.
+      if (dockedAway || dockedHome) {
+        setPhase("out");
+        await new Promise((r) => setTimeout(r, CROSSFADE_MID));
+        if (dockedAway) {
+          await centerWindowBox(size.w, size.h);
+        } else {
+          await applyDock(dockEdge, false);
+        }
+        setFrame(size);
+        setAlwaysOnTop(target === "pill");
+      } else {
+        if (growing) {
+          await setWindowBox(size.w, size.h);
+        }
+        setPhase("out");
+        requestAnimationFrame(() => setFrame(size));
+        setAlwaysOnTop(target === "pill");
+        await new Promise((r) => setTimeout(r, CROSSFADE_MID));
       }
-
-      setPhase("out");
-      // Frame hedefe transition başlasın
-      requestAnimationFrame(() => setFrame(size));
-      setAlwaysOnTop(target === "pill");
-
-      await new Promise((r) => setTimeout(r, CROSSFADE_MID));
 
       if (target === "editor") {
         setEditorReturnView(opts?.returnTo ?? "pill");
@@ -115,19 +143,74 @@ function App() {
 
       await new Promise((r) => setTimeout(r, MORPH_MS - CROSSFADE_MID + 20));
 
-      if (!growing) {
+      if (!growing && !dockedAway && !dockedHome) {
         await setWindowBox(size.w, size.h);
       }
 
       if (target !== "pill") focusWindow();
       busyRef.current = false;
     },
-    [frame],
+    [frame, barMode, dockEdge],
   );
 
   useEffect(() => {
     setAlwaysOnTop(true);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getSettings();
+        if (cancelled) return;
+        const mode: BarMode = (s.bar_mode as BarMode) || "floating";
+        const edge: DockEdge = (s.dock_edge as DockEdge) || "right";
+        setBarMode(mode);
+        setDockEdge(edge);
+        if (mode === "docked") {
+          await applyDock(edge, false);
+          const g = await computeDockGeom(edge, false);
+          setFrame({ w: g.w, h: g.h });
+        }
+      } catch {}
+    })();
+
+    const onConfig = async (e: Event) => {
+      const detail = (e as CustomEvent).detail as { barMode: BarMode; dockEdge: DockEdge };
+      setBarMode(detail.barMode);
+      setDockEdge(detail.dockEdge);
+      setDockExpanded(false);
+      if (detail.barMode === "docked") {
+        const g = await computeDockGeom(detail.dockEdge, false);
+        setFrame({ w: g.w, h: g.h });
+      } else {
+        setFrame(VIEW_SIZES.pill);
+      }
+    };
+    window.addEventListener("nodesk-bar-config", onConfig as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("nodesk-bar-config", onConfig as EventListener);
+    };
+  }, []);
+
+  const toggleDock = useCallback(async () => {
+    if (busyRef.current) return;
+    const next = !dockExpanded;
+    setDockExpanded(next);
+    await applyDock(dockEdge, next);
+    const g = await computeDockGeom(dockEdge, next);
+    setFrame({ w: g.w, h: g.h });
+  }, [dockExpanded, dockEdge]);
+
+  const collapseDock = useCallback(async () => {
+    if (busyRef.current) return;
+    if (!dockExpanded) return;
+    setDockExpanded(false);
+    await applyDock(dockEdge, false);
+    const g = await computeDockGeom(dockEdge, false);
+    setFrame({ w: g.w, h: g.h });
+  }, [dockExpanded, dockEdge]);
 
   useEffect(() => {
     const un = listen("open-settings", () => {
@@ -149,7 +232,7 @@ function App() {
             : { width: frame.w, height: frame.h }
         }
       >
-        {view === "pill" && (
+        {view === "pill" && barMode === "floating" && (
           <Widget
             onNewNote={() => morphTo("editor")}
             onHistory={() => morphTo("history")}
@@ -158,6 +241,23 @@ function App() {
             onRecord={() => morphTo("recorder")}
             onOcr={() => morphTo("ocr")}
             onClipboard={() => morphTo("clipboard")}
+            onVideoEdit={() => morphTo("videoEditor")}
+          />
+        )}
+        {view === "pill" && barMode === "docked" && phase === "in" && (
+          <DockedBar
+            edge={dockEdge}
+            expanded={dockExpanded}
+            onToggle={toggleDock}
+            onCollapse={collapseDock}
+            onNewNote={() => morphTo("editor")}
+            onHistory={() => morphTo("history")}
+            onSettings={() => morphTo("settings")}
+            onScreenshot={() => morphTo("screenshot")}
+            onRecord={() => morphTo("recorder")}
+            onOcr={() => morphTo("ocr")}
+            onClipboard={() => morphTo("clipboard")}
+            onVideoEdit={() => morphTo("videoEditor")}
           />
         )}
         {view === "editor" && (
@@ -193,6 +293,9 @@ function App() {
         )}
         {view === "clipboard" && (
           <ClipboardPanel onClose={() => morphTo("pill")} />
+        )}
+        {view === "videoEditor" && (
+          <VideoEditor onClose={() => morphTo("pill")} />
         )}
       </div>
     </div>

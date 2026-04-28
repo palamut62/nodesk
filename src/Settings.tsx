@@ -4,9 +4,13 @@ import ErrorBubble from "./components/ErrorBubble";
 import WindowControls from "./components/WindowControls";
 import { useLang, useT, type Lang } from "./lib/i18n";
 import {
+  applyDock,
+  applyFloating,
   getSettings,
   listModels,
   saveSettings,
+  type BarMode,
+  type DockEdge,
   type ModelInfo,
   type Settings as SettingsType,
 } from "./lib/tauri";
@@ -32,6 +36,8 @@ export default function Settings({ onClose }: Props) {
   const [groqKeyDirty, setGroqKeyDirty] = useState(false);
   const [model, setModel] = useState("");
   const [autostart, setAutostart] = useState(false);
+  const [barMode, setBarMode] = useState<BarMode>("floating");
+  const [dockEdge, setDockEdge] = useState<DockEdge>("right");
   const [provider, setProvider] = useState<"openrouter" | "ollama" | "nvidia">("openrouter");
   const [ollamaUrl, setOllamaUrl] = useState("http://127.0.0.1:11434");
   const [ollamaModel, setOllamaModel] = useState("gemma4:31b-cloud");
@@ -52,6 +58,8 @@ export default function Settings({ onClose }: Props) {
         setModel(settings.openrouter_model);
         setGroqKey(settings.groq_api_key ?? "");
         setAutostart(settings.autostart);
+        setBarMode((settings.bar_mode as BarMode) || "floating");
+        setDockEdge((settings.dock_edge as DockEdge) || "right");
         setProvider((settings.ai_provider as "openrouter" | "ollama" | "nvidia") || "openrouter");
         setOllamaUrl(settings.ollama_base_url || "http://127.0.0.1:11434");
         setOllamaModel(settings.ollama_model || "gemma4:31b-cloud");
@@ -101,7 +109,21 @@ export default function Settings({ onClose }: Props) {
         ollama_model: ollamaModel,
         nvidia_api_key: nvidiaKeyDirty ? nvidiaKey : undefined,
         nvidia_model: nvidiaModel,
+        bar_mode: barMode,
+        dock_edge: dockEdge,
       });
+      try {
+        window.localStorage.setItem("nodesk-bar-mode", barMode);
+        window.localStorage.setItem("nodesk-dock-edge", dockEdge);
+      } catch {}
+      window.dispatchEvent(
+        new CustomEvent("nodesk-bar-config", { detail: { barMode, dockEdge } }),
+      );
+      if (barMode === "docked") {
+        await applyDock(dockEdge, false);
+      } else {
+        await applyFloating();
+      }
       setError("");
       setStatus(t("savedNote"));
       window.setTimeout(() => onClose(), 500);
@@ -413,6 +435,33 @@ export default function Settings({ onClose }: Props) {
               </button>
             </div>
             <div className="settings-hint">console.groq.com — ucretsiz, Whisper icin</div>
+          </div>
+
+          <div className="settings-section">
+            <label className="settings-label">{t("barMode")}</label>
+            <div className="settings-row">
+              <select
+                className="settings-input"
+                value={barMode}
+                onChange={(e) => setBarMode(e.target.value as BarMode)}
+              >
+                <option value="floating">{t("barModeFloating")}</option>
+                <option value="docked">{t("barModeDocked")}</option>
+              </select>
+            </div>
+            {barMode === "docked" && (
+              <div className="settings-row" style={{ marginTop: 8 }}>
+                <select
+                  className="settings-input"
+                  value={dockEdge}
+                  onChange={(e) => setDockEdge(e.target.value as DockEdge)}
+                >
+                  <option value="right">{t("edgeRight")}</option>
+                  <option value="left">{t("edgeLeft")}</option>
+                  <option value="bottom">{t("edgeBottom")}</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="settings-section">

@@ -32,7 +32,12 @@ export interface Settings {
   ollama_model: string;
   nvidia_api_key: string;
   nvidia_model: string;
+  bar_mode: string;
+  dock_edge: string;
 }
+
+export type BarMode = "floating" | "docked";
+export type DockEdge = "right" | "left" | "bottom";
 
 export interface ModelInfo {
   id: string;
@@ -51,6 +56,8 @@ export const saveSettings = (payload: {
   ollama_model?: string;
   nvidia_api_key?: string;
   nvidia_model?: string;
+  bar_mode?: BarMode;
+  dock_edge?: DockEdge;
 }) => invoke<void>("save_settings", { payload });
 
 export const listModels = () => invoke<ModelInfo[]>("list_models");
@@ -120,6 +127,52 @@ export interface ExportGifPayload {
 
 export const exportGif = (payload: ExportGifPayload) =>
   invoke<void>("export_gif", { payload });
+
+export type BlurMode = "inside" | "outside";
+
+export interface BlurRegionPayload {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  mode: BlurMode;
+  strength?: number;
+  t_start?: number;
+  t_end?: number;
+}
+
+export interface AudioTrackPayload {
+  path: string;
+  volume?: number;
+  replace_original?: boolean;
+}
+
+export type VideoOutputFormat = "mp4" | "webm" | "mov" | "gif";
+
+export interface EditJobPayload {
+  input: string;
+  output: string;
+  trim_start?: number;
+  trim_end?: number;
+  blurs: BlurRegionPayload[];
+  audio?: AudioTrackPayload;
+  format: VideoOutputFormat;
+}
+
+export const processVideo = (payload: EditJobPayload) =>
+  invoke<void>("process_video", { payload });
+
+export const prepareVideoPreview = (input: string) =>
+  invoke<string>("prepare_video_preview", { input });
+
+export interface VideoProbe {
+  width: number;
+  height: number;
+  duration: number;
+}
+
+export const probeVideo = (input: string) =>
+  invoke<VideoProbe>("probe_video", { input });
 
 export const deleteFile = (path: string) =>
   invoke<void>("delete_file", { path });
@@ -489,7 +542,7 @@ export const copyClip = (id: number) =>
 
 export type ViewKind =
   | "pill" | "editor" | "history" | "settings"
-  | "screenshot" | "recorder" | "ocr" | "clipboard";
+  | "screenshot" | "recorder" | "ocr" | "clipboard" | "videoEditor";
 
 export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
   pill: { w: 482, h: 56 },
@@ -500,6 +553,7 @@ export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
   recorder: { w: 520, h: 640 },
   ocr: { w: 900, h: 780 },
   clipboard: { w: 460, h: 600 },
+  videoEditor: { w: 1000, h: 760 },
 };
 
 export async function setAlwaysOnTop(value: boolean) {
@@ -548,5 +602,91 @@ export async function setWindowBox(w: number, h: number): Promise<void> {
       await win.setPosition(new LogicalPosition(Math.round(x), Math.round(y)));
     }
     await win.setSize(new LogicalSize(Math.round(w), Math.round(h)));
+  } catch {}
+}
+
+export interface DockGeom {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export async function computeDockGeom(
+  edge: DockEdge,
+  expanded: boolean,
+): Promise<DockGeom> {
+  let monW = 1920;
+  let monH = 1080;
+  let monX = 0;
+  let monY = 0;
+  try {
+    const mon = await currentMonitor();
+    if (mon) {
+      monW = mon.size.width / mon.scaleFactor;
+      monH = mon.size.height / mon.scaleFactor;
+      monX = mon.position.x / mon.scaleFactor;
+      monY = mon.position.y / mon.scaleFactor;
+    }
+  } catch {}
+
+  if (edge === "bottom") {
+    const w = expanded ? Math.min(560, Math.round(monW * 0.6)) : 200;
+    const h = expanded ? 64 : 16;
+    return {
+      x: Math.round(monX + (monW - w) / 2),
+      y: Math.round(monY + monH - h),
+      w,
+      h,
+    };
+  }
+  // right / left
+  const w = expanded ? 64 : 16;
+  const h = expanded ? Math.min(520, Math.round(monH * 0.78)) : 200;
+  const y = Math.round(monY + (monH - h) / 2);
+  const x = edge === "right" ? Math.round(monX + monW - w) : Math.round(monX);
+  return { x, y, w, h };
+}
+
+export async function applyDock(edge: DockEdge, expanded: boolean) {
+  const g = await computeDockGeom(edge, expanded);
+  const win = getCurrentWindow();
+  try {
+    if (await win.isMaximized()) await win.unmaximize();
+    await win.setSize(new LogicalSize(g.w, g.h));
+    await win.setPosition(new LogicalPosition(g.x, g.y));
+  } catch (e) {
+    console.error("[applyDock] failed", e);
+  }
+}
+
+export async function centerWindowBox(w: number, h: number) {
+  const win = getCurrentWindow();
+  try {
+    let monW = 1920;
+    let monH = 1080;
+    let monX = 0;
+    let monY = 0;
+    try {
+      const mon = await currentMonitor();
+      if (mon) {
+        monW = mon.size.width / mon.scaleFactor;
+        monH = mon.size.height / mon.scaleFactor;
+        monX = mon.position.x / mon.scaleFactor;
+        monY = mon.position.y / mon.scaleFactor;
+      }
+    } catch {}
+    await win.setSize(new LogicalSize(Math.round(w), Math.round(h)));
+    const x = Math.round(monX + (monW - w) / 2);
+    const y = Math.round(monY + (monH - h) / 2);
+    await win.setPosition(new LogicalPosition(x, y));
+  } catch {}
+}
+
+export async function applyFloating() {
+  const win = getCurrentWindow();
+  try {
+    await win.setSize(new LogicalSize(482, 56));
+    await win.setPosition(new LogicalPosition(40, 40));
   } catch {}
 }

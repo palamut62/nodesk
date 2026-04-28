@@ -23,6 +23,18 @@ pub struct Settings {
     pub nvidia_api_key: String,
     #[serde(default = "default_nvidia_model")]
     pub nvidia_model: String,
+    #[serde(default = "default_bar_mode")]
+    pub bar_mode: String,
+    #[serde(default = "default_dock_edge")]
+    pub dock_edge: String,
+}
+
+fn default_bar_mode() -> String {
+    "floating".to_string()
+}
+
+fn default_dock_edge() -> String {
+    "right".to_string()
 }
 
 fn default_nvidia_model() -> String {
@@ -72,6 +84,8 @@ impl SettingsStore {
                     nvidia_api_key: std::env::var("NVIDIA_API_KEY").unwrap_or_default(),
                     nvidia_model: std::env::var("NVIDIA_MODEL")
                         .unwrap_or_else(|_| default_nvidia_model()),
+                    bar_mode: default_bar_mode(),
+                    dock_edge: default_dock_edge(),
                 }
             });
         Self {

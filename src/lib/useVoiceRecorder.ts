@@ -2,27 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   aiFixText,
-  hideToTray,
   saveNote,
-  startDrag,
   startLiveWhisper,
   type LiveWhisperSession,
-} from "./lib/tauri";
-import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video, Scissors, AlertCircle, ScanText, Clipboard } from "lucide-react";
-import { useT } from "./lib/i18n";
+} from "./tauri";
+import { useT } from "./i18n";
 
-interface Props {
-  onNewNote: () => void;
-  onHistory: () => void;
-  onSettings: () => void;
-  onScreenshot: () => void;
-  onRecord: () => void;
-  onOcr: () => void;
-  onClipboard: () => void;
-  onVideoEdit: () => void;
-}
-
-export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot, onRecord, onOcr, onClipboard, onVideoEdit }: Props) {
+export function useVoiceRecorder() {
   const t = useT();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -31,6 +17,8 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
   const liveRef = useRef<LiveWhisperSession | null>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<number | null>(null);
+  const partialRef = useRef<string>("");
+  const recordingRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -40,6 +28,10 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
       if (timerRef.current != null) clearInterval(timerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
 
   const flashLabel = (text: string, ms = 2200) => {
     setLabel(text);
@@ -69,16 +61,13 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
       flashError(trimmed.slice("[HATA]".length).trim());
       return;
     }
-    // AI ile duzelt
     let processed = trimmed;
     try {
       setLabel(t("aiFixing"));
       const fixed = await aiFixText(trimmed, "fix");
       const clean = fixed.trim();
       if (clean && !clean.startsWith("[HATA]")) processed = clean;
-    } catch {
-      // AI basarisizsa ham metni kaydet
-    }
+    } catch {}
     const now = new Date();
     const title = `Sesli not · ${now.toLocaleString("tr-TR", {
       day: "2-digit",
@@ -94,8 +83,6 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
     flashLabel(t("saved"));
   };
 
-  const partialRef = useRef<string>("");
-
   const startRecording = async () => {
     if (busy || recording) return;
     try {
@@ -106,8 +93,8 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
         onLevel: (l) => {
           currentLevel = l;
         },
-        onPartial: (t) => {
-          partialRef.current = t;
+        onPartial: (txt) => {
+          partialRef.current = txt;
         },
       });
       liveRef.current = session;
@@ -118,16 +105,16 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
         const s = Math.floor((Date.now() - startTimeRef.current) / 1000);
         const bars = Math.max(0, Math.min(8, Math.round(currentLevel * 20)));
         const meter = "█".repeat(bars) + "░".repeat(8 - bars);
-        const t = partialRef.current;
-        if (t) {
-          const preview = t.length > 16 ? "…" + t.slice(-16) : t;
+        const txt = partialRef.current;
+        if (txt) {
+          const preview = txt.length > 16 ? "…" + txt.slice(-16) : txt;
           setLabel(`🔴 ${meter} ${preview}`);
         } else {
           setLabel(`🔴 ${formatElapsed(s)} ${meter}`);
         }
       }, 150);
     } catch (e: any) {
-      console.error("[widget] start err", e);
+      console.error("[voice] start err", e);
       flashError(String(e?.message || e));
     }
   };
@@ -147,7 +134,7 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
       const text = await session.stop();
       await saveTranscript(text);
     } catch (e: any) {
-      console.error("[widget] stop err", e);
+      console.error("[voice] stop err", e);
       flashError(String(e?.message || e));
     } finally {
       setBusy(false);
@@ -158,11 +145,6 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
     if (recording) stopRecording();
     else startRecording();
   };
-
-  const recordingRef = useRef(false);
-  useEffect(() => {
-    recordingRef.current = recording;
-  }, [recording]);
 
   useEffect(() => {
     const unDown = listen("voice-ptt-down", () => {
@@ -183,105 +165,12 @@ export default function Widget({ onNewNote, onHistory, onSettings, onScreenshot,
     };
   }, []);
 
-  return (
-    <div className="widget">
-      <div className={`widget-pill ${recording ? "recording" : ""}`}>
-        <div
-          className="drag-area"
-          onMouseDown={(e) => {
-            if (e.button === 0 && !recording && !busy) startDrag();
-          }}
-        >
-          <span className={`dot ${recording ? "dot-rec" : ""}`} />
-          <span className="label">{label}</span>
-        </div>
-        {error && !recording && (
-          <button
-            className="widget-error-btn"
-            title={error}
-            onClick={() => setError("")}
-            style={{ color: "#e53935", flexShrink: 0 }}
-          >
-            <AlertCircle size={15} />
-          </button>
-        )}
-        <button
-          title={recording ? t("voice.stop") : t("voice.record")}
-          onClick={toggleVoice}
-          disabled={busy}
-          className={recording ? "mic-recording" : ""}
-        >
-          {recording ? <Square size={14} /> : <Mic size={16} />}
-        </button>
-        {!recording && (
-          <>
-            <button
-              title={t("history")}
-              onClick={onHistory}
-              disabled={busy}
-            >
-              <HistoryIcon size={16} />
-            </button>
-            <button
-              title={t("takeScreenshot")}
-              onClick={onScreenshot}
-              disabled={busy}
-            >
-              <Camera size={16} />
-            </button>
-            <button
-              title="GIF kaydı"
-              onClick={onRecord}
-              disabled={busy}
-            >
-              <Video size={16} />
-            </button>
-            <button
-              title="Video düzenle"
-              onClick={onVideoEdit}
-              disabled={busy}
-            >
-              <Scissors size={16} />
-            </button>
-            <button
-              title="Ekrandan metin yakala (OCR)"
-              onClick={onOcr}
-              disabled={busy}
-            >
-              <ScanText size={16} />
-            </button>
-            <button
-              title="Pano (kopyalanan metinler)"
-              onClick={onClipboard}
-              disabled={busy}
-            >
-              <Clipboard size={16} />
-            </button>
-            <button
-              className="primary"
-              title={t("newNote")}
-              onClick={onNewNote}
-              disabled={busy}
-            >
-              <Pencil size={16} />
-            </button>
-            <button
-              title={t("settings")}
-              onClick={onSettings}
-              disabled={busy}
-            >
-              <SettingsIcon size={16} />
-            </button>
-            <button
-              title={t("hideToTray")}
-              onClick={() => hideToTray()}
-              disabled={busy}
-            >
-              <X size={16} />
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  return {
+    recording,
+    busy,
+    label,
+    error,
+    setError,
+    toggleVoice,
+  };
 }

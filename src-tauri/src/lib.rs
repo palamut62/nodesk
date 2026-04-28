@@ -94,6 +94,8 @@ pub struct SaveSettingsPayload {
     pub ollama_model: Option<String>,
     pub nvidia_api_key: Option<String>,
     pub nvidia_model: Option<String>,
+    pub bar_mode: Option<String>,
+    pub dock_edge: Option<String>,
 }
 
 #[tauri::command]
@@ -148,6 +150,16 @@ fn save_settings(
             cur.groq_api_key = k;
         } else if k.is_empty() {
             cur.groq_api_key = String::new();
+        }
+    }
+    if let Some(m) = payload.bar_mode {
+        if m == "floating" || m == "docked" {
+            cur.bar_mode = m;
+        }
+    }
+    if let Some(e) = payload.dock_edge {
+        if e == "right" || e == "left" || e == "bottom" {
+            cur.dock_edge = e;
         }
     }
     if let Some(a) = payload.autostart {
@@ -421,6 +433,48 @@ async fn export_gif(payload: ExportGifPayload) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VideoProbe {
+    pub width: u32,
+    pub height: u32,
+    pub duration: f64,
+}
+
+#[tauri::command]
+async fn prepare_video_preview(app: tauri::AppHandle, input: String) -> Result<String, String> {
+    let cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let out = cache.join(format!("preview-{stamp}.mp4"));
+    let out_str = out.to_string_lossy().to_string();
+    let out_clone = out_str.clone();
+    tokio::task::spawn_blocking(move || recorder::prepare_preview(&input, &out_clone))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(out_str)
+}
+
+#[tauri::command]
+async fn probe_video(input: String) -> Result<VideoProbe, String> {
+    tokio::task::spawn_blocking(move || recorder::probe_dimensions(&input))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|(width, height, duration)| VideoProbe { width, height, duration })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn process_video(payload: recorder::EditJob) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || recorder::apply_edit(payload))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn delete_file(path: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
@@ -528,6 +582,9 @@ pub fn run() {
             start_recording,
             stop_recording,
             export_gif,
+            process_video,
+            prepare_video_preview,
+            probe_video,
             delete_file
         ])
         .setup(|app| {
