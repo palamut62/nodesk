@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="nodesk" width="640" />
+  <img src="assets/banner.svg" alt="nodesk — always-on-top desktop notes, voice, AI, screenshots, video editor" width="900" />
 </p>
 
 # nodesk
