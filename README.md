@@ -1,8 +1,28 @@
-<p align="center">
-  <img src="assets/banner-v2.svg" alt="nodesk — always-on-top desktop notes, voice, AI, screenshots, video editor" width="100%" />
-</p>
+<div align="center">
+  <h1>nodesk</h1>
 
-# nodesk
+  <p><strong>always-on-top desktop notes, voice, AI, screenshots, and video tools</strong></p>
+
+  <p>
+    <a href="https://github.com/palamut62/nodesk/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/palamut62/nodesk?style=flat-square&label=stars&color=ffd33d&labelColor=555555"></a>
+    <a href="https://github.com/palamut62/nodesk/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/palamut62/nodesk?style=flat-square&label=last%20commit&color=6fdd8b&labelColor=555555"></a>
+    <a href="#license"><img alt="license" src="https://img.shields.io/badge/license-MIT-8bd100?style=flat-square&labelColor=555555"></a>
+    <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&labelColor=555555">
+    <img alt="React 19" src="https://img.shields.io/badge/React-19-61dafb?style=flat-square&labelColor=555555">
+  </p>
+
+  <p>
+    <a href="#features">Features</a> •
+    <a href="#installation">Installation</a> •
+    <a href="#configuration">Configuration</a> •
+    <a href="#keyboard-shortcuts">Shortcuts</a> •
+    <a href="#tech-stack">Tech Stack</a>
+  </p>
+
+  <p>
+    <strong>nodesk workspace</strong> · notes, dictation, OCR, clipboard history, screen recording, and mini video editing
+  </p>
+</div>
 
 A lightweight, always-on-top desktop note widget built with Tauri 2 + React. Sits quietly in the corner of your screen, ready whenever you need it.
 
