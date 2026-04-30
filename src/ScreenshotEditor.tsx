@@ -14,6 +14,7 @@ import {
   Trash2,
   Copy,
   MousePointer2,
+  FolderOpen,
   Bold,
   Italic,
   Underline as UnderlineIcon,
@@ -21,8 +22,9 @@ import {
   AlignCenter,
   AlignRight,
 } from "lucide-react";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { readImageAsDataUrl } from "./lib/tauri";
 import { useT } from "./lib/i18n";
 import WindowControls from "./components/WindowControls";
 
@@ -126,6 +128,35 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
   const [status, setStatus] = useState("");
   const [scale, setScale] = useState(1);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [imageSrc, setImageSrc] = useState<string>(`data:image/png;base64,${imageBase64}`);
+
+  // imageBase64 prop yenilenirse ic state'i tazele (ekran capture'dan donus)
+  useEffect(() => {
+    setImageSrc(`data:image/png;base64,${imageBase64}`);
+  }, [imageBase64]);
+
+  const openImageFile = async () => {
+    const path = await openDialog({
+      multiple: false,
+      filters: [
+        { name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif"] },
+      ],
+    });
+    if (path && typeof path === "string") {
+      try {
+        // Backend'den base64 data URL al — asset:// canvas'i tainted yapmasin.
+        const dataUrl = await readImageAsDataUrl(path);
+        setImageSrc(dataUrl);
+        setAnnotations([]);
+        setUndoStack([]);
+        setRedoStack([]);
+        setSelectedId(null);
+        setStatus("");
+      } catch (e) {
+        setStatus(`Resim açılamadı: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  };
 
   useEffect(() => {
     const img = new Image();
@@ -140,8 +171,8 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
     img.onerror = (e) => {
       console.error("[screenshot] image load failed", e);
     };
-    img.src = `data:image/png;base64,${imageBase64}`;
-  }, [imageBase64]);
+    img.src = imageSrc;
+  }, [imageSrc]);
 
   const measureTextBox = useCallback((ann: Annotation) => {
     const text = ann.text?.length ? ann.text : DEFAULT_TEXT;
@@ -774,6 +805,16 @@ export default function ScreenshotEditor({ imageBase64, onClose }: Props) {
           {toolBtn("text", <Type size={15} />, t("addText"))}
           {toolBtn("blur", <Droplets size={15} />, t("blur"))}
           {toolBtn("blur-inverse", <EyeOff size={15} />, t("blurInverse"))}
+
+          <div className="screenshot-separator" />
+
+          <button
+            className="screenshot-tool-btn"
+            title="Resim aç"
+            onClick={openImageFile}
+          >
+            <FolderOpen size={15} />
+          </button>
 
           <div className="screenshot-separator" />
 

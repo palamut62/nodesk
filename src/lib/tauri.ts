@@ -510,6 +510,8 @@ export function startSpeech(opts?: {
 
 export const readTextFile = (path: string) =>
   invoke<string>("read_text_file", { path });
+export const readImageAsDataUrl = (path: string) =>
+  invoke<string>("read_image_as_data_url", { path });
 export const writeTextFile = (path: string, content: string) =>
   invoke<void>("write_text_file", { path, content });
 export const writeBinaryFile = (path: string, data: number[]) =>
