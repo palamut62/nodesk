@@ -2,7 +2,7 @@
 
 A lightweight, always-on-top desktop note widget built with Tauri 2 + React. Sits quietly in the corner of your screen, ready whenever you need it.
 
-![nodesk widget](assets/preview.png)
+![nodesk widget](assets/preview.png?v=2)
 
 ---
 
