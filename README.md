@@ -6,7 +6,7 @@
   <p>
     <a href="https://github.com/palamut62/nodesk/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/palamut62/nodesk?style=flat-square&label=stars&color=ffd33d&labelColor=555555"></a>
     <a href="https://github.com/palamut62/nodesk/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/palamut62/nodesk?style=flat-square&label=last%20commit&color=6fdd8b&labelColor=555555"></a>
-    <a href="#license"><img alt="license" src="https://img.shields.io/badge/license-MIT-8bd100?style=flat-square&labelColor=555555"></a>
+    <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-8bd100?style=flat-square&labelColor=555555"></a>
     <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&labelColor=555555">
     <img alt="React 19" src="https://img.shields.io/badge/React-19-61dafb?style=flat-square&labelColor=555555">
   </p>
