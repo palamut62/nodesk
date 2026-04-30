@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="nodesk" width="640" />
+</p>
+
 # nodesk
 
 A lightweight, always-on-top desktop note widget built with Tauri 2 + React. Sits quietly in the corner of your screen, ready whenever you need it.
