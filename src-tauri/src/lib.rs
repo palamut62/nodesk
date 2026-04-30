@@ -501,9 +501,12 @@ fn hide_to_tray(window: WebviewWindow) -> Result<(), String> {
 
 fn toggle_window(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        if w.is_visible().unwrap_or(false) {
+        let visible = w.is_visible().unwrap_or(false);
+        let minimized = w.is_minimized().unwrap_or(false);
+        if visible && !minimized {
             let _ = w.hide();
         } else {
+            let _ = w.unminimize();
             let _ = w.show();
             let _ = w.set_focus();
         }
@@ -534,6 +537,7 @@ pub fn run() {
                         && event.state() == ShortcutState::Pressed
                     {
                         if let Some(w) = &main {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                             let _ = w.emit("voice-note-toggle", ());
@@ -621,6 +625,7 @@ pub fn run() {
                     "show" => toggle_window(app),
                     "settings" => {
                         if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                             let _ = w.emit("open-settings", ());

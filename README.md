@@ -8,17 +8,27 @@ A lightweight, always-on-top desktop note widget built with Tauri 2 + React. Sit
 
 ## Features
 
-- **Floating pill widget** — always-on-top, borderless, draggable. Stays out of the taskbar.
+- **Floating pill widget or docked bar** — always-on-top, borderless, draggable. Choose between a floating pill or a slim bar docked to the left/right/bottom edge of the screen.
 - **Rich text editor** — TipTap-powered with headings, lists, to-do checkboxes, quotes, code blocks, highlights, and links.
 - **Voice notes** — press the mic button (or `Ctrl+Shift+V` / `F9` push-to-talk) to dictate. Transcribed via Groq Whisper, then auto-corrected by your AI provider.
-- **AI text fixing** — fix grammar, shorten, expand, or reformat — powered by OpenRouter or a local Ollama model.
+- **AI text fixing** — fix grammar, shorten, expand, or reformat — powered by OpenRouter, NVIDIA, or a local Ollama model.
 - **Note history** — searchable list of all saved notes with tag filtering.
 - **Screenshot capture** — grab the full screen, annotate with text, arrows, rectangles, and blur, then save or copy to clipboard.
+- **OCR** — extract text from any region of the screen using the Windows Media OCR engine.
+- **Clipboard manager** — keeps a history of recent copies, pin items, and re-paste with one click.
 - **Screen recorder** — record the full screen or a custom region as MP4 or GIF (requires FFmpeg).
+- **Mini video editor** — open any local video (mp4, mov, webm, mkv, avi, wmv, flv, m4v, mpg, ts, gif) and:
+  - Trim with a draggable timeline (start/end handles).
+  - Add multiple **blur regions** with live canvas preview — choose **inside** (blur the rectangle) or **outside** (blur everything except the rectangle).
+  - Each blur can be **always-on or time-ranged** — e.g. blur an API key only between 0:12 and 0:18 of the video. Drag the segment on the timeline to retime it; drag the corners to resize the rectangle; use the corner grip to move it.
+  - Adjust blur strength per region.
+  - **Add or replace audio** with volume control and mix with the original soundtrack.
+  - Export to **MP4 (H.264)**, **WebM (VP9)**, **MOV (H.264)**, or **GIF**.
+  - Auto-transcodes a fast preview when the source format isn't natively decodable in WebView2 (e.g. WMV) — original file is still used for export, so quality is preserved.
 - **System tray** — minimizes to tray on close; toggle visibility from the tray icon or left-click.
 - **Auto-start with Windows** — optional, toggled from Settings.
 - **Local SQLite storage** — all notes stored on-device, no cloud dependency.
-- **Dual AI backends** — OpenRouter (cloud) or Ollama (local/private).
+- **Triple AI backend** — OpenRouter (cloud), NVIDIA NIM (cloud), or Ollama (local/private).
 
 ---
 
@@ -121,6 +131,10 @@ nodesk/
 │   ├── History.tsx          # Note history list
 │   ├── Settings.tsx         # Settings panel
 │   ├── Recorder.tsx         # Screen recorder (MP4/GIF)
+│   ├── VideoEditor.tsx      # Mini video editor (trim, blur, audio, formats)
+│   ├── OcrCapture.tsx       # OCR text extraction
+│   ├── ClipboardPanel.tsx   # Clipboard manager
+│   ├── DockedBar.tsx        # Edge-docked compact bar
 │   ├── ScreenshotEditor.tsx # Screenshot annotation
 │   ├── lib/tauri.ts         # Tauri invoke wrappers
 │   └── styles/apple.css     # Apple Notes-inspired theme
@@ -131,7 +145,10 @@ nodesk/
 │   │   ├── openrouter.rs    # OpenRouter API client
 │   │   ├── ollama.rs        # Ollama API client
 │   │   ├── whisper.rs       # Groq Whisper transcription
-│   │   ├── recorder.rs      # FFmpeg screen recording
+│   │   ├── recorder.rs      # FFmpeg screen recording + video editor pipeline
+│   │   ├── ocr.rs           # Windows OCR engine
+│   │   ├── clipboard.rs     # Clipboard history watcher
+│   │   ├── nvidia.rs        # NVIDIA NIM API client
 │   │   ├── screenshot.rs    # Screen capture
 │   │   └── settings.rs      # Persistent settings store
 │   └── tauri.conf.json
