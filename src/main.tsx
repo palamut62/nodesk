@@ -103,6 +103,12 @@ function App() {
       }
 
       if (target === "editor") {
+        try {
+          const win = getCurrentWindow();
+          if (!(await win.isMaximized())) {
+            await win.maximize();
+          }
+        } catch {}
         setEditorReturnView(opts?.returnTo ?? "pill");
         if (opts?.noteId != null) {
           try {
@@ -113,6 +119,15 @@ function App() {
         } else {
           setNoteToLoad(null);
         }
+      }
+
+      if (target === "pill") {
+        try {
+          const win = getCurrentWindow();
+          if (await win.isMaximized()) {
+            await win.unmaximize();
+          }
+        } catch {}
       }
 
       if (target === "screenshot" || target === "ocr") {
@@ -222,7 +237,7 @@ function App() {
   }, [morphTo]);
 
   return (
-    <div className={`app-root view-${view}`}>
+    <div className={`nodesk-root view-${view}`}>
       <DialogHost />
       <div
         className={`morph-frame phase-${phase}`}

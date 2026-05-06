@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Check, Copy, X } from "lucide-react";
-import { useT } from "../lib/i18n";
+import { useT } from "../lib/legacy-i18n";
 
 interface Props {
   message: string;

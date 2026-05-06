@@ -18,7 +18,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { hideToTray, type DockEdge } from "./lib/tauri";
-import { useT } from "./lib/i18n";
+import { useT } from "./lib/legacy-i18n";
 import { useVoiceRecorder } from "./lib/useVoiceRecorder";
 
 interface Props {

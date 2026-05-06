@@ -25,6 +25,7 @@
         "resizable": true,
         "skipTaskbar": true,
         "shadow": false,
+        "visible": false,
         "center": false,
         "x": 40,
         "y": 40,

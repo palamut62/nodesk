@@ -6,7 +6,7 @@ import {
   startLiveWhisper,
   type LiveWhisperSession,
 } from "./tauri";
-import { useT } from "./i18n";
+import { useT } from "./legacy-i18n";
 
 export function useVoiceRecorder() {
   const t = useT();

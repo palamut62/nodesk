@@ -25,7 +25,7 @@ import {
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { readImageAsDataUrl } from "./lib/tauri";
-import { useT } from "./lib/i18n";
+import { useT } from "./lib/legacy-i18n";
 import WindowControls from "./components/WindowControls";
 
 type Tool = "select" | "text" | "rect" | "arrow" | "blur" | "blur-inverse";

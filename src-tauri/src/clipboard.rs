@@ -104,10 +104,14 @@ impl ClipStore {
         Ok(())
     }
 
-    pub fn delete(&self, id: u64) {
+    pub fn delete(&self, id: u64) -> Result<()> {
         let mut f = self.inner.lock().unwrap();
+        if f.items.iter().any(|i| i.id == id && i.pinned) {
+            anyhow::bail!("pinli kaydi silmek icin once pini kaldirin");
+        }
         f.items.retain(|i| i.id != id);
         self.save(&f);
+        Ok(())
     }
 
     pub fn get_text(&self, id: u64) -> Option<String> {

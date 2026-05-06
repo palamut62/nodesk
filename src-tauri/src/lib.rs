@@ -221,6 +221,73 @@ fn delete_note(db: State<Db>, id: i64) -> Result<(), String> {
     db.delete(id).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateNoteMetaPayload {
+    pub id: i64,
+    pub folder_id: Option<i64>,
+    pub status: Option<String>,
+    pub pinned: Option<bool>,
+    pub encrypted: Option<bool>,
+    pub encrypted_content: Option<String>,
+}
+
+#[tauri::command]
+fn update_note_meta(db: State<Db>, payload: UpdateNoteMetaPayload) -> Result<(), String> {
+    let note = db.get(payload.id).map_err(|e| e.to_string())?;
+    db.update_meta(
+        payload.id,
+        payload.folder_id.or(note.folder_id),
+        payload.status.as_deref().unwrap_or(&note.status),
+        payload.pinned.unwrap_or(note.pinned),
+        payload.encrypted.unwrap_or(note.encrypted),
+        payload.encrypted_content.as_deref().or(note.encrypted_content.as_deref()),
+    ).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_folder(db: State<Db>, name: String) -> Result<i64, String> {
+    db.create_folder(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_folders(db: State<Db>) -> Result<Vec<db::Folder>, String> {
+    db.list_folders().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_folder(db: State<Db>, id: i64, name: String) -> Result<(), String> {
+    db.rename_folder(id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_folder(db: State<Db>, id: i64) -> Result<(), String> {
+    db.delete_folder(id).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SaveVersionPayload {
+    pub note_id: i64,
+    pub title: String,
+    pub content: String,
+    pub label: Option<String>,
+}
+
+#[tauri::command]
+fn save_version(db: State<Db>, payload: SaveVersionPayload) -> Result<String, String> {
+    db.save_version(payload.note_id, &payload.title, &payload.content, payload.label.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_versions(db: State<Db>, note_id: i64) -> Result<Vec<db::NoteVersion>, String> {
+    db.list_versions(note_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_version(db: State<Db>, id: String) -> Result<(), String> {
+    db.delete_version(&id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn ai_fix_text(
     store: State<'_, SettingsStore>,
@@ -307,8 +374,8 @@ fn toggle_clip_pin(store: State<Arc<ClipStore>>, id: u64) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn delete_clip(store: State<Arc<ClipStore>>, id: u64) {
-    store.delete(id);
+fn delete_clip(store: State<Arc<ClipStore>>, id: u64) -> Result<(), String> {
+    store.delete(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -515,6 +582,14 @@ fn hide_to_tray(window: WebviewWindow) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn show_main(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        w.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn toggle_window(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let visible = w.is_visible().unwrap_or(false);
@@ -592,6 +667,7 @@ pub fn run() {
             start_drag,
             quit_app,
             hide_to_tray,
+            show_main,
             capture_screen,
             ocr_image,
             list_clipboard,
@@ -606,7 +682,15 @@ pub fn run() {
             process_video,
             prepare_video_preview,
             probe_video,
-            delete_file
+            delete_file,
+            update_note_meta,
+            create_folder,
+            list_folders,
+            rename_folder,
+            delete_folder,
+            save_version,
+            list_versions,
+            delete_version
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

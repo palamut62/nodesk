@@ -18,6 +18,26 @@ export interface Note {
   tags: string;
   created_at: number;
   updated_at: number;
+  folder_id?: number | null;
+  status: string;
+  pinned: boolean;
+  encrypted: boolean;
+  encrypted_content?: string | null;
+}
+
+export interface Folder {
+  id: number;
+  name: string;
+  created_at: number;
+}
+
+export interface NoteVersion {
+  id: string;
+  note_id: number;
+  title: string;
+  content: string;
+  label?: string | null;
+  saved_at: number;
 }
 
 export const getConfig = () => invoke<AppConfig>("get_config");
@@ -63,6 +83,7 @@ export const saveSettings = (payload: {
 export const listModels = () => invoke<ModelInfo[]>("list_models");
 
 export const hideToTray = () => invoke<void>("hide_to_tray");
+export const showMain = () => invoke<void>("show_main");
 
 export const saveNote = (
   id: number | null,
@@ -548,7 +569,7 @@ export type ViewKind =
 
 export const VIEW_SIZES: Record<ViewKind, { w: number; h: number }> = {
   pill: { w: 482, h: 56 },
-  editor: { w: 700, h: 600 },
+  editor: { w: 1280, h: 820 },
   history: { w: 460, h: 600 },
   settings: { w: 460, h: 520 },
   screenshot: { w: 900, h: 700 },
@@ -684,6 +705,45 @@ export async function centerWindowBox(w: number, h: number) {
     await win.setPosition(new LogicalPosition(x, y));
   } catch {}
 }
+
+// ============ NOTE META ============
+
+export const updateNoteMeta = (payload: {
+  id: number;
+  folder_id?: number | null;
+  status?: string;
+  pinned?: boolean;
+  encrypted?: boolean;
+  encrypted_content?: string | null;
+}) => invoke<void>("update_note_meta", { payload });
+
+// ============ FOLDERS ============
+
+export const createFolder = (name: string) =>
+  invoke<number>("create_folder", { name });
+
+export const listFolders = () => invoke<Folder[]>("list_folders");
+
+export const renameFolder = (id: number, name: string) =>
+  invoke<void>("rename_folder", { id, name });
+
+export const deleteFolder = (id: number) =>
+  invoke<void>("delete_folder", { id });
+
+// ============ VERSION HISTORY ============
+
+export const saveVersion = (payload: {
+  note_id: number;
+  title: string;
+  content: string;
+  label?: string;
+}) => invoke<string>("save_version", { payload });
+
+export const listVersions = (noteId: number) =>
+  invoke<NoteVersion[]>("list_versions", { noteId: noteId });
+
+export const deleteVersion = (id: string) =>
+  invoke<void>("delete_version", { id });
 
 export async function applyFloating() {
   const win = getCurrentWindow();

@@ -4,7 +4,7 @@ import { confirmDialog } from "./components/Dialog";
 import ErrorBubble from "./components/ErrorBubble";
 import WindowControls from "./components/WindowControls";
 import { sanitizeAiHtml } from "./lib/aiHtml";
-import { useT } from "./lib/i18n";
+import { useT } from "./lib/legacy-i18n";
 import {
   aiFixText,
   deleteNote,

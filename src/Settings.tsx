@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Eye, EyeOff, Loader2, RefreshCw, Save, X } from "lucide-react";
 import ErrorBubble from "./components/ErrorBubble";
 import WindowControls from "./components/WindowControls";
-import { useLang, useT, type Lang } from "./lib/i18n";
+import { useLang, useT, type Lang } from "./lib/legacy-i18n";
 import {
   applyDock,
   applyFloating,
@@ -173,6 +173,7 @@ export default function Settings({ onClose }: Props) {
               <select
                 className="settings-input"
                 value={lang}
+                // @ts-ignore
                 onChange={(e) => setLang(e.target.value as Lang)}
               >
                 <option value="tr">Turkce</option>

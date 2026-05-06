@@ -61,8 +61,10 @@ export default function ClipboardPanel({ onClose }: Props) {
     refresh();
   };
 
-  const handleDelete = async (id: number) => {
-    await deleteClip(id);
+  const handleDelete = async (item: ClipItem) => {
+    if (item.pinned) return;
+
+    await deleteClip(item.id);
     refresh();
   };
 
@@ -126,9 +128,9 @@ export default function ClipboardPanel({ onClose }: Props) {
                   {copiedId === it.id ? <Check size={13} /> : <Copy size={13} />}
                 </button>
                 <button
-                  title="Sil"
-                  onClick={() => void handleDelete(it.id)}
-                  style={iconBtn("#e53935")}
+                  title={it.pinned ? "Silmek icin once pini kaldir" : "Sil"}
+                  onClick={() => void handleDelete(it)}
+                  style={iconBtn(it.pinned ? "#b8b8b8" : "#e53935", it.pinned)}
                   disabled={it.pinned}
                 >
                   <Trash2 size={13} />
@@ -149,10 +151,11 @@ export default function ClipboardPanel({ onClose }: Props) {
   );
 }
 
-function iconBtn(color: string): React.CSSProperties {
+function iconBtn(color: string, disabled = false): React.CSSProperties {
   return {
     width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center",
     background: "transparent", border: "1px solid transparent", borderRadius: 6,
-    color, cursor: "pointer", padding: 0,
+    color, cursor: disabled ? "not-allowed" : "pointer", padding: 0,
+    opacity: disabled ? 0.45 : 1,
   };
 }

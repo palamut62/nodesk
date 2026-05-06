@@ -568,7 +568,7 @@ button {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===================== MORPH / APP ROOT ===================== */
-.app-root {
+.nodesk-root {
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -1882,4 +1882,454 @@ select.settings-input {
   color: #ff453a;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+/* ===================== RICH EDITOR TOOLBAR ===================== */
+.editor-toolbar-rich {
+  gap: 3px;
+  flex-wrap: wrap;
+  min-height: 36px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.tbtn {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 5px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+.tbtn:hover { background: rgba(42, 38, 32, 0.1); color: var(--ink); }
+.tbtn.tbtn-on { background: var(--accent); color: var(--ink); }
+.tbtn.dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+/* Select dropdowns in toolbar */
+.toolbar-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid rgba(42, 38, 32, 0.18);
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--ink);
+  font: 11px var(--font);
+  border-radius: 5px;
+  outline: none;
+  cursor: pointer;
+  min-width: 80px;
+}
+.toolbar-select-wide { min-width: 130px; }
+.toolbar-select-size { min-width: 60px; }
+.toolbar-select:focus { border-color: var(--accent); }
+
+/* Color picker */
+.toolbar-color-btn {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 5px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.toolbar-color-btn:hover { background: rgba(42, 38, 32, 0.1); }
+.color-btn-icon {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.color-indicator {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 1px;
+  background: #000;
+  flex-shrink: 0;
+}
+.color-swatch-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  background: linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%);
+  border: 1px solid var(--paper-edge);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 50;
+  width: 140px;
+}
+.color-swatch-item {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.15);
+  cursor: pointer;
+  transition: transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  background: #fff;
+}
+.color-swatch-item:hover { transform: scale(1.2); }
+.color-swatch-custom {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.15);
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Dropdown menus */
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 140px;
+  background: linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%);
+  border: 1px solid var(--paper-edge);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 50;
+  padding: 4px;
+}
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: background 0.12s;
+}
+.dropdown-item:hover { background: rgba(42, 38, 32, 0.08); }
+
+/* Table contextual toolbar */
+.editor-toolbar-table {
+  padding: 4px 10px;
+  background: rgba(245, 183, 0, 0.08);
+  border-top: none;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+}
+
+/* ===================== FIND & REPLACE ===================== */
+.find-replace-bar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.3);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.find-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 200px;
+}
+.find-input {
+  flex: 1;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(42, 38, 32, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+  font: 12px var(--font);
+  color: var(--ink);
+  outline: none;
+  min-width: 0;
+}
+.find-input:focus { border-color: var(--accent); }
+.find-count {
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  min-width: 36px;
+}
+.find-case-label {
+  font-size: 11px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.find-case-label input { cursor: pointer; }
+.find-btn {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: rgba(42, 38, 32, 0.06);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.find-btn:hover:not(:disabled) { background: rgba(42, 38, 32, 0.12); color: var(--ink); }
+.find-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.find-close-btn {
+  height: 26px;
+  width: 26px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.find-close-btn:hover { background: rgba(42, 38, 32, 0.1); color: var(--ink); }
+
+/* ===================== TOC PANEL ===================== */
+.toc-panel {
+  width: 200px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.toc-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.toc-close-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.toc-close-btn:hover { background: rgba(42, 38, 32, 0.1); }
+.toc-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 4px;
+}
+.toc-empty {
+  padding: 12px 10px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  opacity: 0.7;
+  line-height: 1.5;
+}
+.toc-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.toc-item {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--ink);
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s;
+}
+.toc-item:hover { background: rgba(42, 38, 32, 0.08); }
+.toc-h1 { font-weight: 700; font-size: 12px; }
+.toc-h2 { padding-left: 16px; }
+.toc-h3 { padding-left: 28px; font-size: 10px; opacity: 0.8; }
+
+/* ===================== MODALS ===================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(42, 38, 32, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+.modal-card {
+  background: linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: dialog-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.modal-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.modal-close:hover { background: rgba(42, 38, 32, 0.1); }
+
+/* ===================== CALLOUT ===================== */
+.editor-body .callout {
+  margin: 0.8em 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+.editor-body .callout-info { background: #eff6ff; border-color: #3b82f6; }
+.editor-body .callout-warning { background: #fffbeb; border-color: #f59e0b; }
+.editor-body .callout-success { background: #f0fdf4; border-color: #22c55e; }
+.editor-body .callout-danger { background: #fef2f2; border-color: #ef4444; }
+
+/* ===================== TABLES ===================== */
+.editor-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+  font-size: 13px;
+}
+.editor-body th, .editor-body td {
+  border: 1px solid rgba(42, 38, 32, 0.2);
+  padding: 6px 10px;
+  text-align: left;
+}
+.editor-body th {
+  background: rgba(245, 183, 0, 0.15);
+  font-weight: 600;
+}
+.editor-body tr:nth-child(even) td {
+  background: rgba(42, 38, 32, 0.03);
+}
+
+/* ===================== WIKI LINKS ===================== */
+.editor-body .wiki-link {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--accent-deep);
+  color: var(--accent-deep);
+}
+.editor-body .wiki-link-new { border-bottom-style: dotted; opacity: 0.6; }
+
+/* ===================== MATH ===================== */
+.editor-body .math-formula {
+  display: block;
+  margin: 0.8em 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+/* ===================== CODE BLOCK ===================== */
+.editor-body pre.hljs {
+  background: rgba(42, 38, 32, 0.07);
+  padding: 12px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ===================== RELATIVE ===================== */
+.relative { position: relative; }
+
+/* ===================== NOTE HOME EMBED ===================== */
+.nodesk-note-home-shell {
+  width: 100%;
+  height: 100%;
+}
+
+.nodesk-note-home-card {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.nodesk-note-home-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.nodesk-note-home-body .app-root {
+  height: 100%;
+}
+
+.nodesk-note-home-body .app-editor-area {
+  background: hsl(var(--muted) / 0.3) !important;
 }

@@ -9,7 +9,7 @@ import {
   type LiveWhisperSession,
 } from "./lib/tauri";
 import { Pencil, History as HistoryIcon, Mic, X, Settings as SettingsIcon, Square, Camera, Video, Scissors, AlertCircle, ScanText, Clipboard } from "lucide-react";
-import { useT } from "./lib/i18n";
+import { useT } from "./lib/legacy-i18n";
 
 interface Props {
   onNewNote: () => void;
