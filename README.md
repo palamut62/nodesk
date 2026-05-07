@@ -5,7 +5,7 @@ Always-on-top desktop notes workspace built with Tauri 2 + React 19.
 nodesk combines:
 - a floating/docked quick-access bar
 - a full-featured note workspace (sidebar, tabs, status bar, Kanban, calendar)
-- AI-assisted writing (OpenRouter, NVIDIA NIM, Groq, and optional Ollama flows)
+- AI-assisted writing across multiple providers with automatic fallback
 - screenshot, OCR, clipboard, recorder, and mini video editing tools
 
 ![nodesk widget](assets/preview.png?v=3)
@@ -22,13 +22,31 @@ nodesk combines:
 - Multi-view notes: editor, Kanban, calendar.
 - Templates, print preview, import/export (`txt`, `md`, `docx`, JSON backup).
 - Version history and note encryption dialog.
-- Built-in AI chat panel for active note/all notes context.
+- Built-in AI chat panel that can target the active note or every saved note.
 
-### AI + voice
-- Providers: OpenRouter, NVIDIA NIM, Groq (plus Ollama support in the Tauri settings flow).
-- Provider-specific API key/model settings with model fetch.
-- AI actions: fix text, translate, summarize, tag suggestions, OCR text cleanup.
-- Voice transcription pipeline (provider-dependent), plus editor insertion.
+### AI features
+nodesk talks to four providers from a single settings panel and applies an automatic
+fallback chain when a request is rate-limited or times out (the active provider is
+tried first, then any other provider that has a key + model configured).
+
+| Capability | Where it appears | Backend |
+|---|---|---|
+| Chat with note(s) (streaming) | AI chat panel — single note or all-notes mode | OpenRouter / NVIDIA NIM / Groq |
+| Fix grammar & spelling | Editor toolbar → "AI fix" | Active provider, customizable prompt |
+| Translate selection / note | Editor toolbar → translate menu | Active provider |
+| Summarize note | Editor toolbar → summarize | Active provider |
+| Tag suggestions | Tag bar → AI suggest | Active provider |
+| Inline single-word fix | Typing assistance | Active provider |
+| Voice → text transcription | Voice note button, `Ctrl+Shift+V`, `F9` push-to-talk | Groq Whisper `whisper-large-v3-turbo` or OpenRouter Whisper |
+| Image OCR | OCR capture panel, screenshot OCR | NVIDIA NIM `meta/llama-3.2-11b-vision-instruct` |
+
+Defaults out of the box:
+- `AI_PROVIDER=openrouter`
+- `OPENROUTER_MODEL=openai/gpt-oss-20b:free` — fast, free, no upstream rate limits at time of writing
+- OCR is hard-wired to `meta/llama-3.2-11b-vision-instruct` (requires an NVIDIA API key)
+- Voice transcription requires a Groq or OpenRouter key (NVIDIA is not supported for audio)
+
+You can change the active provider and per-provider model from the in-app **Settings** dialog at any time — the model dropdown is populated by calling `/v1/models` on the selected provider.
 
 ### Desktop tools
 - Floating pill mode or docked bar mode (left/right/bottom).
@@ -84,10 +102,11 @@ Optional environment bootstrap (`.env`):
 
 ```env
 OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_MODEL=openai/gpt-4o-mini
+OPENROUTER_MODEL=openai/gpt-oss-20b:free
 NVIDIA_API_KEY=nvapi-...
-NVIDIA_MODEL=deepseek-ai/deepseek-v4-flash
+NVIDIA_MODEL=openai/gpt-oss-20b
 GROQ_API_KEY=gsk_...
+GROQ_MODEL=openai/gpt-oss-20b
 AI_PROVIDER=openrouter
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=llama3

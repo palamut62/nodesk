@@ -4,7 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useApp } from '@/lib/app-state';
 import { useT } from '@/lib/use-t';
 import { Note } from '@/lib/types';
-import { ChatMessage, chatWithNoteStream, DEFAULT_AI_PROMPTS, getProviderApiKey, getProviderModel } from '@/lib/ai';
+import { ChatMessage, chatWithNote, chatWithNoteStream, DEFAULT_AI_PROMPTS, getProviderApiKey, getProviderModel } from '@/lib/ai';
 import { Bot, Send, Trash2, X, User, BookOpen, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -63,10 +63,8 @@ export function AiChatPanel({ note, notes, onClose }: Props) {
     const text = input.trim();
     if (!text || loading) return;
 
-    const provider = settings.provider;
     const apiKey = getProviderApiKey(settings);
     const model = getProviderModel(settings)?.trim();
-
     if (!apiKey?.trim() || !model) {
       toast({ title: t('ai.not.configured'), description: t('ai.not.configured.desc'), variant: 'destructive' });
       return;
@@ -95,7 +93,7 @@ export function AiChatPanel({ note, notes, onClose }: Props) {
       // Append empty assistant message that will be filled progressively
       setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
-      await chatWithNoteStream(
+      const streamed = await chatWithNoteStream(
         newMessages,
         noteContent,
         settings.provider,
@@ -114,6 +112,27 @@ export function AiChatPanel({ note, notes, onClose }: Props) {
         settings.language ?? 'tr',
         customSystemPrompt,
       );
+
+      // Bazı provider/model kombinasyonları stream yerine boş gövde dönebiliyor.
+      if (!streamed?.trim()) {
+        const fallback = await chatWithNote(
+          newMessages,
+          noteContent,
+          settings.provider,
+          apiKey,
+          model,
+          settings.language ?? 'tr',
+          customSystemPrompt,
+        );
+        setMessages(prev => {
+          const next = prev.slice();
+          const last = next[next.length - 1];
+          if (last && last.role === 'assistant') {
+            next[next.length - 1] = { ...last, content: fallback || t('ai.error') };
+          }
+          return next;
+        });
+      }
     } catch (err: unknown) {
       const msg = (err as Error).message ?? '';
       const is400 = msg.includes('(400)');

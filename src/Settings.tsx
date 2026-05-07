@@ -44,7 +44,7 @@ export default function Settings({ onClose }: Props) {
   const [nvidiaKey, setNvidiaKey] = useState("");
   const [nvidiaKeyMasked, setNvidiaKeyMasked] = useState(true);
   const [nvidiaKeyDirty, setNvidiaKeyDirty] = useState(false);
-  const [nvidiaModel, setNvidiaModel] = useState("deepseek-ai/deepseek-v4-flash");
+  const [nvidiaModel, setNvidiaModel] = useState("openai/gpt-oss-20b");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -64,7 +64,7 @@ export default function Settings({ onClose }: Props) {
         setOllamaUrl(settings.ollama_base_url || "http://127.0.0.1:11434");
         setOllamaModel(settings.ollama_model || "gemma4:31b-cloud");
         setNvidiaKey(settings.nvidia_api_key ?? "");
-        setNvidiaModel(settings.nvidia_model || "deepseek-ai/deepseek-v4-flash");
+        setNvidiaModel(settings.nvidia_model || "openai/gpt-oss-20b");
         setError("");
       } catch (err) {
         setError(getErrorMessage(err));
@@ -391,7 +391,7 @@ export default function Settings({ onClose }: Props) {
                       className="settings-input"
                       value={nvidiaModel}
                       onChange={(e) => setNvidiaModel(e.target.value)}
-                      placeholder="deepseek-ai/deepseek-v4-flash"
+                      placeholder="openai/gpt-oss-20b"
                     />
                   )}
                   <button

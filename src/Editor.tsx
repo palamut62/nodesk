@@ -6,7 +6,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { Home as NoteHome } from "./pages/home";
 import { Toaster } from "./components/ui/sonner";
 import WindowControls from "./components/WindowControls";
-import type { Note as TauriNote } from "./lib/tauri";
+import { getSettings, type Note as TauriNote } from "./lib/tauri";
 import "./index.css";
 
 interface Props {
@@ -26,6 +26,33 @@ function normalizeTags(tags: string): string[] {
 function Bridge({ noteToLoad }: { noteToLoad: TauriNote | null }) {
   const { createNote, updateNote, setActiveNoteId, settings, updateSettings } = useApp();
   const mapRef = useRef<Map<number, string>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getSettings();
+        if (cancelled) return;
+        updateSettings({
+          provider:
+            s.ai_provider === "nvidia" || s.ai_provider === "groq"
+              ? s.ai_provider
+              : "openrouter",
+          openrouterApiKey: s.openrouter_api_key || "",
+          openrouterModel: s.openrouter_model || settings.openrouterModel || "",
+          nvidiaApiKey: s.nvidia_api_key || "",
+          nvidiaModel: s.nvidia_model || settings.nvidiaModel || "",
+          groqApiKey: s.groq_api_key || "",
+          groqModel: settings.groqModel || "openai/gpt-oss-20b",
+        });
+      } catch (e) {
+        console.warn("[editor] failed to hydrate AI settings from backend", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (settings.theme !== "apple-yellow") {

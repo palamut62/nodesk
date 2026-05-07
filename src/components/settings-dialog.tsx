@@ -52,6 +52,13 @@ const PROMPT_DEFS = [
 
 type ProviderStatus = 'idle' | 'loading' | 'ok' | 'error';
 
+const NVIDIA_MODEL_PREFERENCES = [
+  'openai/gpt-oss-20b',
+  'deepseek-ai/deepseek-v4-pro',
+  'deepseek-ai/deepseek-v4-flash',
+  'meta/llama-3.1-8b-instruct',
+] as const;
+
 interface ProviderBlockProps {
   id: AiProvider;
   label: string;
@@ -234,7 +241,11 @@ export function SettingsDialog() {
       setModels(fetched);
       setStatus('ok');
       if (fetched.length > 0 && !fetched.find(m => m.id === curModel)) {
-        updateSettings({ [modelKey]: fetched[0].id });
+        const preferred =
+          provider === 'nvidia'
+            ? NVIDIA_MODEL_PREFERENCES.find(id => fetched.some(m => m.id === id))
+            : undefined;
+        updateSettings({ [modelKey]: preferred ?? fetched[0].id });
       }
     } catch (e: any) {
       setStatus('error');

@@ -20,6 +20,12 @@ const PROVIDER_ENDPOINTS: Record<AiProvider, { chat: string; models: string; tra
 const OCR_MODEL = 'meta/llama-3.2-11b-vision-instruct';
 const GROQ_TRANSCRIPTION_MODEL = 'whisper-large-v3-turbo';
 
+export interface ProviderRunConfig {
+  provider: AiProvider;
+  apiKey: string;
+  model: string;
+}
+
 function providerHeaders(
   provider: AiProvider,
   apiKey: string,
@@ -47,6 +53,25 @@ function parseDataUrl(dataUrl: string): { mime: string; format: string; base64: 
   return { mime, format, base64 };
 }
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs = 30000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: init.signal ?? controller.signal });
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      throw new Error('İstek zaman aşımına uğradı. Model yanıt vermedi, farklı model/provider deneyin.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function getProviderApiKey(settings: Settings): string {
   if (settings.provider === 'openrouter') return settings.openrouterApiKey;
   if (settings.provider === 'nvidia') return settings.nvidiaApiKey;
@@ -57,6 +82,71 @@ export function getProviderModel(settings: Settings): string {
   if (settings.provider === 'openrouter') return settings.openrouterModel;
   if (settings.provider === 'nvidia') return settings.nvidiaModel;
   return settings.groqModel;
+}
+
+export function getProviderConfigs(settings: Settings): ProviderRunConfig[] {
+  const all: ProviderRunConfig[] = [
+    { provider: settings.provider, apiKey: getProviderApiKey(settings), model: getProviderModel(settings) },
+    { provider: 'openrouter', apiKey: settings.openrouterApiKey, model: settings.openrouterModel },
+    { provider: 'groq', apiKey: settings.groqApiKey, model: settings.groqModel || 'openai/gpt-oss-20b' },
+    { provider: 'nvidia', apiKey: settings.nvidiaApiKey, model: settings.nvidiaModel },
+  ];
+  const seen = new Set<AiProvider>();
+  return all.filter((c) => {
+    if (seen.has(c.provider)) return false;
+    seen.add(c.provider);
+    return !!c.apiKey?.trim() && !!c.model?.trim();
+  });
+}
+
+function isRetryableError(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || '').toLowerCase();
+  return (
+    msg.includes('429')
+    || msg.includes('503')
+    || msg.includes('502')
+    || msg.includes('500')
+    || msg.includes('zaman aşımı')
+    || msg.includes('timeout')
+    || msg.includes('network')
+    || msg.includes('failed to fetch')
+  );
+}
+
+export async function withProviderFallback<T>(
+  settings: Settings,
+  run: (cfg: ProviderRunConfig) => Promise<T>,
+): Promise<T> {
+  const configs = getProviderConfigs(settings);
+  if (configs.length === 0) throw new Error('API anahtarı/model yapılandırması yok');
+
+  let lastErr: unknown = null;
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
+    try {
+      return await run(cfg);
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryableError(e) || i === configs.length - 1) break;
+    }
+  }
+  throw lastErr ?? new Error('AI çağrısı başarısız');
+}
+
+function extractAssistantText(data: any): string {
+  const msg = data?.choices?.[0]?.message;
+  const content = msg?.content;
+  if (typeof content === 'string' && content.trim()) return content;
+  if (Array.isArray(content)) {
+    const merged = content
+      .map((p: any) => (typeof p === 'string' ? p : (p?.text ?? p?.content ?? '')))
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    if (merged) return merged;
+  }
+  if (typeof msg?.reasoning === 'string' && msg.reasoning.trim()) return msg.reasoning.trim();
+  return '';
 }
 
 /** Extract a human-readable error message from any API error response shape. */
@@ -116,7 +206,7 @@ export async function ocrImage(
 
   const compressed = await resizeImageForOcr(imageDataUrl);
 
-  const response = await fetch(PROVIDER_ENDPOINTS.nvidia.chat, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS.nvidia.chat, {
     method: 'POST',
     headers: providerHeaders('nvidia', apiKey),
     body: JSON.stringify({
@@ -147,7 +237,7 @@ export async function ocrImage(
   }
 
   const data = await response.json();
-  return (data.choices?.[0]?.message?.content || '').trim();
+  return extractAssistantText(data).trim();
 }
 
 export async function fixText(
@@ -163,7 +253,7 @@ export async function fixText(
   const template = customPromptTemplate || DEFAULT_AI_PROMPTS.fixText;
   const prompt = template.replace('{text}', text);
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
     method: 'POST',
     headers: providerHeaders(provider, apiKey),
     body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
@@ -175,7 +265,7 @@ export async function fixText(
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || text;
+  return extractAssistantText(data) || text;
 }
 
 export async function translateText(
@@ -194,7 +284,7 @@ export async function translateText(
     .replace('{targetLang}', targetLang)
     .replace('{text}', text);
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
     method: 'POST',
     headers: providerHeaders(provider, apiKey),
     body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
@@ -206,7 +296,7 @@ export async function translateText(
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || text;
+  return extractAssistantText(data) || text;
 }
 
 export async function fixWord(
@@ -221,7 +311,7 @@ export async function fixWord(
     `Aşağıdaki Türkçe kelimedeki yazım hatasını düzelt. Sadece düzeltilmiş kelimeyi döndür, başka hiçbir şey ekleme:\n\n${word}`;
 
   try {
-    const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+    const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
       method: 'POST',
       headers: providerHeaders(provider, apiKey),
       body: JSON.stringify({
@@ -233,7 +323,7 @@ export async function fixWord(
     });
     if (!response.ok) return word;
     const data = await response.json();
-    const result = (data.choices?.[0]?.message?.content || '').trim();
+    const result = (extractAssistantText(data) || '').trim();
     if (result && !result.includes('\n') && result.length <= word.length * 3) {
       return result.split(/\s+/)[0] || word;
     }
@@ -247,7 +337,7 @@ export async function fetchModels(
 ): Promise<{ id: string; name: string }[]> {
   if (!apiKey) throw new Error('API anahtarı gerekli');
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].models, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].models, {
     method: 'GET',
     headers: providerHeaders(provider, apiKey, 'none'),
   });
@@ -283,7 +373,7 @@ export async function summarizeText(
   const template = customPromptTemplate || defaultTemplate;
   const prompt = template.replace('{text}', text);
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
     method: 'POST',
     headers: providerHeaders(provider, apiKey),
     body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
@@ -295,7 +385,7 @@ export async function summarizeText(
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  return extractAssistantText(data) || '';
 }
 
 export async function suggestTags(
@@ -312,7 +402,7 @@ export async function suggestTags(
     ? `Aşağıdaki nota uygun 3-5 adet etiket öner. Etiketler tek kelime veya kısa ifade olmalı. Sadece etiketleri virgülle ayrılmış şekilde döndür, başka hiçbir şey yazma:\n\n${text}`
     : `Suggest 3-5 tags for the following note. Tags should be single words or short phrases. Return only the tags, comma-separated, nothing else:\n\n${text}`;
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
     method: 'POST',
     headers: providerHeaders(provider, apiKey),
     body: JSON.stringify({
@@ -329,7 +419,7 @@ export async function suggestTags(
   }
 
   const data = await response.json();
-  const raw = (data.choices?.[0]?.message?.content || '').trim();
+  const raw = (extractAssistantText(data) || '').trim();
   return raw.split(',').map((t: string) => t.trim().toLowerCase()).filter((t: string) => t.length > 0);
 }
 
@@ -350,7 +440,7 @@ export async function transcribeAudio(
   let response: Response;
   const { mime, format, base64 } = parseDataUrl(audioDataUrl);
   if (provider === 'openrouter') {
-    response = await fetch(PROVIDER_ENDPOINTS.openrouter.transcribe!, {
+    response = await fetchWithTimeout(PROVIDER_ENDPOINTS.openrouter.transcribe!, {
       method: 'POST',
       headers: providerHeaders('openrouter', apiKey),
       body: JSON.stringify({
@@ -366,7 +456,7 @@ export async function transcribeAudio(
     form.append('file', blob, `audio.${ext}`);
     form.append('model', GROQ_TRANSCRIPTION_MODEL);
     form.append('language', 'tr');
-    response = await fetch(PROVIDER_ENDPOINTS.groq.transcribe!, {
+    response = await fetchWithTimeout(PROVIDER_ENDPOINTS.groq.transcribe!, {
       method: 'POST',
       headers: providerHeaders('groq', apiKey, 'none'),
       body: form,
@@ -408,10 +498,16 @@ export async function chatWithNoteStream(
   const template = customSystemPrompt || defaultTemplate;
   const systemPrompt = template.replace('{noteContent}', noteContent);
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+  const controller = signal ? null : new AbortController();
+  const timeout = controller ? setTimeout(() => controller.abort(), 35000) : null;
+
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
     method: 'POST',
-    headers: providerHeaders(provider, apiKey.trim()),
-    signal,
+    headers: {
+      ...providerHeaders(provider, apiKey.trim()),
+      Accept: 'text/event-stream, application/json',
+    },
+    signal: signal ?? controller?.signal,
     body: JSON.stringify({
       model: trimmedModel,
       stream: true,
@@ -421,17 +517,26 @@ export async function chatWithNoteStream(
       ],
     }),
   });
+  if (timeout) clearTimeout(timeout);
 
   if (!response.ok) {
     const detail = await extractApiError(response);
     throw new Error(`API Hatası (${response.status}): ${detail} [model: ${trimmedModel}]`);
   }
 
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    const data = await response.json().catch(() => ({}));
+    const fullJson = extractAssistantText(data) || '';
+    if (fullJson) onChunk(fullJson, fullJson);
+    return fullJson;
+  }
+
   const reader = response.body?.getReader();
   if (!reader) {
     // No stream body — fall back to JSON read
     const data = await response.json().catch(() => ({}));
-    const full = data.choices?.[0]?.message?.content || '';
+    const full = extractAssistantText(data) || '';
     if (full) onChunk(full, full);
     return full;
   }
@@ -467,6 +572,18 @@ export async function chatWithNoteStream(
       }
     }
   }
+  if (!full && buffer.trim()) {
+    try {
+      const j = JSON.parse(buffer.trim());
+      const fallback = extractAssistantText(j) || '';
+      if (fallback) {
+        onChunk(fallback, fallback);
+        return fallback;
+      }
+    } catch {
+      // non-JSON trailing payload
+    }
+  }
   return full;
 }
 
@@ -489,7 +606,7 @@ export async function chatWithNote(
   const template = customSystemPrompt || defaultTemplate;
   const systemPrompt = template.replace('{noteContent}', noteContent);
 
-  const response = await fetch(PROVIDER_ENDPOINTS[provider].chat, {
+  const response = await fetchWithTimeout(PROVIDER_ENDPOINTS[provider].chat, {
     method: 'POST',
     headers: providerHeaders(provider, apiKey.trim()),
     body: JSON.stringify({
@@ -507,5 +624,5 @@ export async function chatWithNote(
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  return extractAssistantText(data) || '';
 }

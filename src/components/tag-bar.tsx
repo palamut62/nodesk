@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { X, Tag, Sparkles } from 'lucide-react';
 import { useApp } from '@/lib/app-state';
 import { useT } from '@/lib/use-t';
-import { getProviderApiKey, getProviderModel, suggestTags } from '@/lib/ai';
+import { suggestTags, getProviderApiKey, getProviderModel } from '@/lib/ai';
 import { useToast } from '@/hooks/use-toast';
 
 const TAG_COLORS = [
@@ -65,7 +65,7 @@ export function TagBar({ noteId, tags, filterTag, onFilterTag, allTags }: TagBar
 
   const handleSuggestTags = async () => {
     const apiKey = getProviderApiKey(settings);
-    const model  = getProviderModel(settings);
+    const model = getProviderModel(settings);
     if (!apiKey || !model) {
       toast({ title: t('ai.not.configured'), description: t('ai.not.configured.desc'), variant: 'destructive' });
       return;

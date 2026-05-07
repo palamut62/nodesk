@@ -60,27 +60,7 @@ fn get_config(store: State<SettingsStore>) -> AppConfig {
 
 #[tauri::command]
 fn get_settings(store: State<SettingsStore>) -> Settings {
-    let mut s = store.get();
-    // API key'leri frontend'e tam gosterme
-    if !s.openrouter_api_key.is_empty() {
-        s.openrouter_api_key = format!(
-            "****{}",
-            &s.openrouter_api_key[s.openrouter_api_key.len().saturating_sub(4)..]
-        );
-    }
-    if !s.groq_api_key.is_empty() {
-        s.groq_api_key = format!(
-            "****{}",
-            &s.groq_api_key[s.groq_api_key.len().saturating_sub(4)..]
-        );
-    }
-    if !s.nvidia_api_key.is_empty() {
-        s.nvidia_api_key = format!(
-            "****{}",
-            &s.nvidia_api_key[s.nvidia_api_key.len().saturating_sub(4)..]
-        );
-    }
-    s
+    store.get()
 }
 
 #[derive(Debug, Serialize, Deserialize)]

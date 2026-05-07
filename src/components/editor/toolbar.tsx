@@ -241,12 +241,11 @@ export function EditorToolbar({
       });
       return;
     }
-
     const apiKey = getProviderApiKey(settings);
     if (!apiKey) {
       toast({
         title: t('voice.transcribe.error'),
-        description: t('voice.no.api.key'),
+        description: t('ai.not.configured.desc'),
         variant: 'destructive',
       });
       return;
@@ -379,7 +378,7 @@ export function EditorToolbar({
 
   const handleFixText = async () => {
     const apiKey = getProviderApiKey(settings);
-    const model  = getProviderModel(settings);
+    const model = getProviderModel(settings);
     if (!apiKey || !model) {
       toast({ title: t('ai.not.configured'), description: t('ai.not.configured.desc'), variant: 'destructive' });
       return;
@@ -413,8 +412,8 @@ export function EditorToolbar({
     if (!paragraphs.length) return;
     setIsFixing(true);
     try {
-      const allText   = paragraphs.map(p => p.text).join('\n');
-      const fixedAll  = await fixText(allText, settings.provider, apiKey, model);
+      const allText = paragraphs.map(p => p.text).join('\n');
+      const fixedAll = await fixText(allText, settings.provider, apiKey, model);
       const fixedLines = fixedAll.split('\n');
 
       const tr = state.tr;
@@ -436,11 +435,12 @@ export function EditorToolbar({
 
   const handleTranslate = async () => {
     const apiKey = getProviderApiKey(settings);
-    const model  = getProviderModel(settings);
+    const model = getProviderModel(settings);
     if (!apiKey || !model) {
       toast({ title: t('ai.not.configured'), description: t('ai.not.configured.desc'), variant: 'destructive' });
       return;
     }
+
     const selection = editor.state.selection;
     const isTextSelected = !selection.empty;
     const textToTranslate = isTextSelected
@@ -450,7 +450,14 @@ export function EditorToolbar({
     setIsTranslating(true);
     try {
       const target = settings.translateTarget ?? 'Türkçe';
-      const translated = await translateText(textToTranslate, settings.provider, apiKey, model, target, settings.aiPrompts?.translate);
+      const translated = await translateText(
+        textToTranslate,
+        settings.provider,
+        apiKey,
+        model,
+        target,
+        settings.aiPrompts?.translate,
+      );
       if (isTextSelected) {
         editor.commands.insertContentAt({ from: selection.from, to: selection.to }, translated);
       } else {
@@ -466,16 +473,24 @@ export function EditorToolbar({
 
   const handleSummarize = async () => {
     const apiKey = getProviderApiKey(settings);
-    const model  = getProviderModel(settings);
+    const model = getProviderModel(settings);
     if (!apiKey || !model) {
       toast({ title: t('ai.not.configured'), description: t('ai.not.configured.desc'), variant: 'destructive' });
       return;
     }
+
     const text = editor.getText();
     if (!text.trim()) return;
     setIsSummarizing(true);
     try {
-      const summary = await summarizeText(text, settings.provider, apiKey, model, settings.language ?? 'tr', settings.aiPrompts?.summarize);
+      const summary = await summarizeText(
+        text,
+        settings.provider,
+        apiKey,
+        model,
+        settings.language ?? 'tr',
+        settings.aiPrompts?.summarize,
+      );
       const label = t('ai.summary.title');
       const html = `<h3>${label}</h3><p>${summary.replace(/\n/g, '</p><p>')}</p><hr>`;
       editor.chain().focus().insertContentAt(editor.state.doc.content.size, html).run();

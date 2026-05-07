@@ -38,11 +38,11 @@ fn default_dock_edge() -> String {
 }
 
 fn default_nvidia_model() -> String {
-    "deepseek-ai/deepseek-v4-flash".to_string()
+    "openai/gpt-oss-20b".to_string()
 }
 
 fn default_model() -> String {
-    "openai/gpt-4o-mini".to_string()
+    "openai/gpt-oss-20b:free".to_string()
 }
 
 fn default_provider() -> String {
